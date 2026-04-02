@@ -3,10 +3,12 @@
 # Run this script from inside your Mendix source project folder.
 # ==============================================================================
 
+$script:ScriptVersion = "1.1"
+
 # -- Step 1: Welcome message ---------------------------------------------------
 Write-Host ""
 Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "    Mendix Code Review Tool -- Setup" -ForegroundColor Cyan
+Write-Host "    Mendix Code Review Tool -- Setup  (v$($script:ScriptVersion))" -ForegroundColor Cyan
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "This tool creates a review workspace for comparing two Mendix"

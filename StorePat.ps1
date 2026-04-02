@@ -19,7 +19,7 @@ Import-Module CredentialManager -ErrorAction Stop
 
 function Get-StoredPAT {
     param(
-        [string]$CredentialName = "MendixCodeReviewRepo_PAT"
+        [string]$CredentialName = "MendixReview_PAT"
     )
 
     # Try to load the credential silently
@@ -39,8 +39,8 @@ function Get-StoredPAT {
             Write-Host ""
             Write-Host "HOW TO FIX:" -ForegroundColor Yellow
             Write-Host "  Re-run the script and paste your Personal Access Token when prompted." -ForegroundColor Yellow
-            Write-Host "  You can generate a PAT in Azure DevOps under:" -ForegroundColor Yellow
-            Write-Host "  User Settings > Personal Access Tokens > New Token" -ForegroundColor Yellow
+            Write-Host "  You can generate a PAT at:" -ForegroundColor Yellow
+            Write-Host "    https://sprintr.home.mendix.com/index.html  (Profile > Security > API Keys)" -ForegroundColor Yellow
             Write-Host ""
             exit 1
         }
@@ -52,7 +52,7 @@ function Get-StoredPAT {
                 -UserName $env:USERNAME `
                 -SecurePassword $securePAT `
                 -Type Generic `
-                -Persist CurrentUser | Out-Null
+                -Persist LocalMachine | Out-Null
         } catch {
             Write-Host ""
             Write-Host "ERROR: Failed to save the PAT to Windows Credential Manager." -ForegroundColor Red
@@ -86,14 +86,4 @@ function Get-StoredPAT {
     return [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
         [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($cred.Password)
     )
-}
-
-# --- Usage in your script ---
-# (Only runs when this script is executed directly, not when dot-sourced)
-if ($MyInvocation.InvocationName -ne '.') {
-    $pat = Get-StoredPAT -CredentialName "MyRepo_PAT"
-    Write-Host "PAT: $pat"
-    # Example: use with REST API
-    # $headers = @{ Authorization = "Bearer $pat" }
-    # Invoke-RestMethod -Uri "https://api.example.com/..." -Headers $headers
 }

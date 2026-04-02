@@ -4,6 +4,8 @@
 # ==============================================================================
 
 $ReviewRoot = (Get-Location).Path
+$script:CredentialName = "MendixReview_PAT"
+$script:ScriptVersion  = "1.1"
 
 # -- Dot-source StorePat.ps1 ---------------------------------------------------
 $storePatScript = Join-Path $PSScriptRoot "StorePat.ps1"
@@ -40,10 +42,14 @@ function Invoke-GitWithPAT {
         [string]$PAT
     )
     # Write a minimal ASKPASS helper to a temp .cmd file.
-    # git calls this when it needs a password; the script echoes the PAT.
-    # The file is removed immediately after the git call completes.
+    # The PAT is passed via an environment variable — not embedded in the file —
+    # so that CMD special characters in the token do not corrupt the echo output.
+    # git calls this script when it needs a password; powershell reads the env var and outputs it.
+    # The file and the env var are removed immediately after the git call completes.
     $cmdPath = Join-Path $env:TEMP "mendix_askpass_$PID.cmd"
-    Set-Content -Path $cmdPath -Value "@echo off`r`necho $PAT" -Encoding ASCII
+    $cmdContent = '@echo off' + "`r`n" + 'powershell.exe -NoProfile -NonInteractive -Command "Write-Host $env:MENDIX_REVIEW_PAT"'
+    Set-Content -Path $cmdPath -Value $cmdContent -Encoding ASCII
+    $env:MENDIX_REVIEW_PAT = $PAT
     $prev = $env:GIT_ASKPASS
     $env:GIT_ASKPASS = $cmdPath
     try {
@@ -51,6 +57,7 @@ function Invoke-GitWithPAT {
         return $LASTEXITCODE
     } finally {
         $env:GIT_ASKPASS = $prev
+        $env:MENDIX_REVIEW_PAT = $null
         Remove-Item -Path $cmdPath -ErrorAction SilentlyContinue
     }
 }
@@ -59,21 +66,6 @@ function Exit-Script {
     param([int]$Code = 0)
     try { Stop-Transcript | Out-Null } catch { }
     exit $Code
-}
-
-function Find-StudioProExe {
-    # Mendix installs versions side-by-side under C:\Program Files\Mendix\<version>\studiopro.exe.
-    # Return the path to the newest installed version, or $null if none found.
-    $mendixRoot = "C:\Program Files\Mendix"
-    if (-not (Test-Path $mendixRoot)) { return $null }
-    $exe = Get-ChildItem -Path $mendixRoot -Recurse -Filter "studiopro.exe" -ErrorAction SilentlyContinue |
-           Sort-Object FullName -Descending |
-           Select-Object -First 1
-    return $exe?.FullName
-}
-
-function Test-StudioProInstalled {
-    return ($null -ne (Find-StudioProExe))
 }
 
 function Open-StudioPro {
@@ -117,7 +109,7 @@ function Remove-DiffGit {
     $gitPath = "$ReviewRoot\diff\.git"
     if (Test-Path $gitPath) {
         try {
-            Remove-Item -Recurse -Force $gitPath
+            Remove-Item -Recurse -Force $gitPath -ErrorAction Stop
         } catch {
             Write-Host ""
             Write-Host "ERROR: Could not remove diff\.git" -ForegroundColor Red
@@ -150,15 +142,13 @@ function Copy-GitInto {
         return $false
     }
 
-    try {
-        Copy-Item -Recurse -Path $SourceGit -Destination $DestGit
-        return $true
-    } catch {
+    robocopy $SourceGit $DestGit /E /NP /NDL /NFL | Out-Null
+    if ($LASTEXITCODE -ge 8) {
         Write-Host ""
         Write-Host "ERROR: Could not copy .git folder." -ForegroundColor Red
         Write-Host "       From: $SourceGit" -ForegroundColor Red
         Write-Host "       To:   $DestGit" -ForegroundColor Red
-        Write-Host "       $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "       robocopy exit code: $LASTEXITCODE" -ForegroundColor Red
         Write-Host ""
         Write-Host "HOW TO FIX:" -ForegroundColor Yellow
         Write-Host "  Check available disk space and permissions on:" -ForegroundColor Yellow
@@ -166,6 +156,7 @@ function Copy-GitInto {
         Write-Host ""
         return $false
     }
+    return $true
 }
 
 
@@ -223,7 +214,7 @@ foreach ($sub in @("v1", "v2", "diff")) {
 
 Write-Host ""
 Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "    Mendix Code Review Tool" -ForegroundColor Cyan
+Write-Host "    Mendix Code Review Tool  (v$($script:ScriptVersion))" -ForegroundColor Cyan
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host "    Review root: $ReviewRoot"
 Write-Host ""
@@ -355,7 +346,7 @@ function Invoke-StartReview {
     }
 
     # Step 2: PAT authentication and verification
-    $PAT = Get-StoredPAT -CredentialName "MendixReview_PAT"
+    $PAT = Get-StoredPAT -CredentialName $script:CredentialName
 
     Write-Host "[AUTH] Verifying PAT against Mendix git server..."
     $originUrl = (git -C "$ReviewRoot\v1" remote get-url origin 2>&1).Trim()
@@ -430,7 +421,7 @@ function Invoke-StartReview {
     }
 
     $commitsFile = Join-Path $ReviewRoot "commits.selected.ps1"
-    & $selectScript -RepoPath "$ReviewRoot\v1" -OutputFile $commitsFile
+    & $selectScript -RepoPath "$ReviewRoot\v1" -OutputFile $commitsFile -Count 50
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[INFO] Commit selection was cancelled. Returning to menu." -ForegroundColor Yellow
         return
@@ -473,7 +464,7 @@ function Invoke-StartReview {
         Write-Host ""
         return
     }
-    git -C "$ReviewRoot\v1" checkout FETCH_HEAD
+    git -C "$ReviewRoot\v1" checkout FETCH_HEAD --quiet
     if ($LASTEXITCODE -ne 0) {
         Write-Host ""
         Write-Host "ERROR: git checkout FETCH_HEAD failed in v1\." -ForegroundColor Red
@@ -499,7 +490,7 @@ function Invoke-StartReview {
         Write-Host ""
         return
     }
-    git -C "$ReviewRoot\v2" checkout FETCH_HEAD
+    git -C "$ReviewRoot\v2" checkout FETCH_HEAD --quiet
     if ($LASTEXITCODE -ne 0) {
         Write-Host ""
         Write-Host "ERROR: git checkout FETCH_HEAD failed in v2\." -ForegroundColor Red
@@ -548,10 +539,37 @@ function Invoke-StartReview {
     # Step 7: Open Studio Pro
     $opened = Open-StudioPro
     if (-not $opened) { return }
+
+    # Post-open prompt: focused 2-option menu while Studio Pro is running
+    Write-Host ""
+    while ($true) {
+        Write-Host "  1. Continue later (return to menu)"
+        Write-Host "  2. Finish review  (close Studio Pro first, then switch to final state)"
+        Write-Host ""
+        $postChoice = (Read-Host "Enter choice (1-2)").Trim()
+        Write-Host ""
+        switch ($postChoice) {
+            "1" { return }
+            "2" { Invoke-FinishReview; return }
+            default { Write-Host "  Please enter 1 or 2." -ForegroundColor Yellow }
+        }
+    }
 }
 
 function Invoke-ContinueReview {
     if (Test-DiffProjectOpen) { return }
+
+    $commitsFile = Join-Path $ReviewRoot "commits.selected.ps1"
+    if (-not (Test-Path $commitsFile)) {
+        Write-Host ""
+        Write-Host "ERROR: No review has been started yet." -ForegroundColor Red
+        Write-Host "       commits.selected.ps1 was not found in: $ReviewRoot" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "HOW TO FIX:" -ForegroundColor Yellow
+        Write-Host "  Use option 1 (Start review) to select commits and begin a review first." -ForegroundColor Yellow
+        Write-Host ""
+        return
+    }
 
     Write-Host "[CONTINUE] Preparing diff\ for continued review..."
 
@@ -578,11 +596,11 @@ function Invoke-FinishReview {
 
 function Invoke-ChangePAT {
     Write-Host "[PAT] Removing stored PAT credential..."
-    Remove-StoredCredential -Target "MendixReview_PAT" -ErrorAction SilentlyContinue
+    Remove-StoredCredential -Target $script:CredentialName -ErrorAction SilentlyContinue
     Write-Host "[OK]  Old PAT removed (if one was stored)."
     Write-Host ""
     Write-Host "[PAT] You will now be prompted to enter a new PAT."
-    Get-StoredPAT -CredentialName "MendixReview_PAT" | Out-Null
+    Get-StoredPAT -CredentialName $script:CredentialName | Out-Null
     Write-Host "[OK]  New PAT saved."
 }
 
@@ -655,6 +673,7 @@ while ($true) {
     Write-Host "  3. Finish review"
     Write-Host "  4. Change PAT"
     Write-Host "  5. Help"
+    Write-Host "  Q. Quit"
     Write-Host ""
 
     $choice = (Read-Host "Enter choice (1-5), or Q to quit").Trim()

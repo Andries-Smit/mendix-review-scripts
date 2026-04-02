@@ -30,12 +30,8 @@ if (-not (Test-Path $RepoPath)) {
 }
 
 # ── Verify git repository ───────────────────────────────────────────────────
-Push-Location $RepoPath
-$gitCheck = git rev-parse --is-inside-work-tree 2>&1
-$gitCheckExit = $LASTEXITCODE
-Pop-Location
-
-if ($gitCheckExit -ne 0) {
+$gitCheck = git -C $RepoPath rev-parse --is-inside-work-tree 2>&1
+if ($LASTEXITCODE -ne 0) {
     Write-Error "[ERROR] Not a git repository: $RepoPath"
     exit 1
 }
@@ -43,10 +39,7 @@ if ($gitCheckExit -ne 0) {
 Write-Host "[OK] Repository: $RepoPath"
 
 # ── Shallow clone warning ───────────────────────────────────────────────────
-Push-Location $RepoPath
-$isShallow = git rev-parse --is-shallow-repository 2>&1
-Pop-Location
-
+$isShallow = git -C $RepoPath rev-parse --is-shallow-repository 2>&1
 if ($isShallow -eq "true") {
     Write-Host "[WARN] This is a shallow clone. Only limited commits may be visible."
     Write-Host "       For full history, point to a non-shallow clone of the repository."
@@ -55,10 +48,8 @@ if ($isShallow -eq "true") {
 # ── Fetch git log ───────────────────────────────────────────────────────────
 Write-Host "[STEP] Fetching last $Count commits..."
 
-Push-Location $RepoPath
-$logLines = git log --pretty=format:"%H|%h|%ad|%an|%s" --date=short -n $Count 2>&1
+$logLines = git -C $RepoPath log --pretty=format:"%H|%h|%ad|%an|%s" --date=short -n $Count 2>&1
 $logExit = $LASTEXITCODE
-Pop-Location
 
 if ($logExit -ne 0) {
     Write-Error "[ERROR] git log failed"
