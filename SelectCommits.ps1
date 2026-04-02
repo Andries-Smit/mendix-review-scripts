@@ -109,8 +109,8 @@ function Draw-CommitList {
         [array] $Commits
     )
 
-    $header  = "  #   Hash      Date        Author              Subject"
-    $divider = "  --- --------  ----------  ------------------  " + ("-" * 38)
+    $header  = "   #      Hash      Date        Author              Subject"
+    $divider = "   ---    --------  ----------  ------------------  " + ("-" * 38)
 
     Write-Host $header
     Write-Host $divider
@@ -148,9 +148,9 @@ function Draw-CommitList {
             if ($isStart -and $isEnd) {
                 $bracket = "[=]"
             } elseif ($isStart) {
-                $bracket = "[+"
+                $bracket = "[+ "
             } elseif ($inRange -and $isEnd) {
-                $bracket = "+]"
+                $bracket = " +]"
             } elseif ($inRange) {
                 $bracket = " | "
             } else {

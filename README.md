@@ -82,6 +82,20 @@ What would you like to do?
 
 Enter `Q` at the menu to quit.
 
+On **Start review** select the commits you would like to review
+
+```
+  [Phase 2] Navigate DOWN to extend range end. ENTER / SPACE to confirm. ESC to reset.    
+  Range: 2-5  |  CommitB (tip): 925f862  |  CommitA (base): c95db44
+   #      Hash      Date        Author              Subject
+   ---    --------  ----------  ------------------  --------------------------------------
+     1     d70ee7f  2026-04-02  Jhon Doe            Extra feature
+     2 [+  925f862  2026-04-02  Alice               Fix some stuff
+     3  |  3998371  2026-04-02  Alice               Add Microflow
+>    4  +] 9723bea  2026-04-02  Alice               Add page
+     5     b9e67b3  2026-04-02  Jhon Doe            My awesome feature
+     6     c95db44  2026-04-02  Jhon Doe            Initial app upload.
+```
 ---
 
 ## How it works (short version)
