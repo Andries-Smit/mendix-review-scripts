@@ -97,6 +97,22 @@ function Open-StudioPro {
     return $true
 }
 
+function Test-DiffProjectOpen {
+    # Returns $true (and warns) if Studio Pro has the diff project open.
+    # Mirrors the lock-file check in Setup.ps1 Step 2b: find the .mpr, then
+    # check for the exact <name>.mpr.lock path rather than using a wildcard.
+    $mpr = Get-ChildItem -Path "$ReviewRoot\diff" -Filter "*.mpr" -File -ErrorAction SilentlyContinue |
+           Select-Object -First 1
+    if ($mpr -and (Test-Path ($mpr.FullName + ".lock"))) {
+        Write-Host ""
+        Write-Host "WARNING: Studio Pro still has the diff project open." -ForegroundColor Yellow
+        Write-Host "         Close Studio Pro, then re-run this option." -ForegroundColor Yellow
+        Write-Host ""
+        return $true
+    }
+    return $false
+}
+
 function Remove-DiffGit {
     $gitPath = "$ReviewRoot\diff\.git"
     if (Test-Path $gitPath) {
@@ -239,6 +255,17 @@ try {
 
 function Show-WorkspaceState {
     Write-Host "----------------------------------------------------------------"
+
+    # Check if Studio Pro still has the diff project open
+    $diffLock = @(Get-ChildItem -Path "$ReviewRoot\diff" -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*.mpr.lock" })
+    if ($diffLock.Count -gt 0) {
+        Write-Host "  ERROR: Studio Pro still has the diff project open." -ForegroundColor Red
+        Write-Host "         Close Studio Pro before using any menu option." -ForegroundColor Red
+        Write-Host "----------------------------------------------------------------"
+        Write-Host ""
+        return
+    }
+
     $commitsFile = Join-Path $ReviewRoot "commits.selected.ps1"
 
     if (-not (Test-Path "$ReviewRoot\diff\.git")) {
@@ -302,6 +329,8 @@ function Show-WorkspaceState {
 # ==============================================================================
 
 function Invoke-StartReview {
+
+    if (Test-DiffProjectOpen) { return }
 
     # Step 1: Check for uncommitted changes in diff\
     if (Test-Path "$ReviewRoot\diff\.git") {
@@ -519,31 +548,11 @@ function Invoke-StartReview {
     # Step 7: Open Studio Pro
     $opened = Open-StudioPro
     if (-not $opened) { return }
-
-    # Step 8: Post-open prompt
-    Write-Host ""
-    Write-Host "Studio Pro is open. What would you like to do?"
-    Write-Host "  1. Continue later  (close this script; run again and choose 'Continue review')"
-    Write-Host "  2. Finish review   (when done reviewing, prepare workspace and reopen Studio Pro)"
-    Write-Host "  3. Quit"
-    Write-Host ""
-
-    while ($true) {
-        $choice = (Read-Host "Enter choice (1, 2 or 3)").Trim()
-        switch ($choice) {
-            "1" {
-                Write-Host ""
-                Write-Host "[INFO] Returning to main menu. Choose option 2 (Continue review) to reopen Studio Pro."
-                return
-            }
-            "2" { Invoke-FinishReview; return }
-            "3" { Write-Host ""; Write-Host "Exiting."; Exit-Script 0 }
-            default { Write-Host "  Please enter 1, 2 or 3." }
-        }
-    }
 }
 
 function Invoke-ContinueReview {
+    if (Test-DiffProjectOpen) { return }
+
     Write-Host "[CONTINUE] Preparing diff\ for continued review..."
 
     if (-not (Remove-DiffGit)) { return }
@@ -555,6 +564,8 @@ function Invoke-ContinueReview {
 }
 
 function Invoke-FinishReview {
+    if (Test-DiffProjectOpen) { return }
+
     Write-Host "[FINISH] Preparing diff\ for finish review..."
 
     if (-not (Remove-DiffGit)) { return }

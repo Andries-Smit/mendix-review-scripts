@@ -47,6 +47,34 @@ exit 1
 
 **SelectCommits.ps1 output**: Writes a dot-sourceable `commits.selected.ps1` file that sets `$CommitA` and `$CommitB`. `Diff.ps1` dot-sources this file to read the selected commits.
 
+## Testing
+
+A test Mendix project is checked in for local testing without needing a real project:
+
+| Path | Purpose |
+|------|---------|
+| `TestReviewApp-main/` | Source Mendix project (contains `TestReviewApp.mpr`) — run `Setup.ps1` from here |
+| `TestReviewApp-main-review/` | Pre-created review workspace — run `Diff.ps1` from here |
+
+To test `Diff.ps1` changes:
+```powershell
+cd C:\GitHub\mendix-review-scripts\TestReviewApp-main-review
+.\Diff.ps1
+```
+
+To test `Setup.ps1` changes, always run the **source** script from the test project directory (not the stale copy inside `TestReviewApp-main/`). Delete the existing review root first:
+```powershell
+Remove-Item -Recurse -Force C:\GitHub\mendix-review-scripts\TestReviewApp-main-review
+cd C:\GitHub\mendix-review-scripts\TestReviewApp-main
+& "C:\GitHub\mendix-review-scripts\Setup.ps1"
+```
+
+Note: `TestReviewApp-main/` contains a live `.mpr.lock` file (Studio Pro may have it open). The `TestReviewApp-main-review/` workspace has `commits.selected.ps1` and `v1/`, `v2/`, `diff/` already populated.
+
+`TestReviewApp-main-review/` is **not** a permanent fixture — it can be deleted when testing `Setup.ps1`. It is not in `.gitignore` so it may or may not be present. Always check before assuming the review workspace exists.
+
+The `Setup.ps1` copy inside `TestReviewApp-main/` may be stale — always run the source version at the repo root when testing.
+
 ## Workflow sequence (Start Review)
 
 1. Check for uncommitted changes in `diff/`

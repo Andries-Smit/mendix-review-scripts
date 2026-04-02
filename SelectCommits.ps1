@@ -256,7 +256,7 @@ try {
                     Write-Host ""
                     Write-Host "[INFO] Cancelled. No output written." -ForegroundColor Yellow
                     [Console]::CursorVisible = $true
-                    exit 0
+                    exit 2
                 }
             }
         }

@@ -59,6 +59,40 @@ Write-Host "[OK] Mendix project found: $($mprFiles[0].Name)"
 Write-Host "     Source folder: $sourcePath"
 Write-Host ""
 
+# -- Step 2b: Check for .mpr.lock (Studio Pro still open) ----------------------
+$lockFile = $mprFiles[0].FullName + ".lock"
+if (Test-Path $lockFile) {
+    Write-Host "WARNING: A .mpr.lock file was found:" -ForegroundColor Yellow
+    Write-Host "         $lockFile" -ForegroundColor Yellow
+    Write-Host "         This usually means Studio Pro is still open with this project." -ForegroundColor Yellow
+    Write-Host "         Copying a project while it is open may result in an inconsistent workspace." -ForegroundColor Yellow
+    Write-Host ""
+    $confirm = (Read-Host "Close Studio Pro first, then press Enter, or type Y to copy anyway [y/N]").Trim()
+    if ($confirm -ne "y" -and $confirm -ne "Y") {
+        Write-Host "[INFO] Aborted. Close Studio Pro and re-run Setup.ps1." -ForegroundColor Yellow
+        exit 0
+    }
+    Write-Host ""
+}
+
+# -- Step 2c: Check for uncommitted changes ------------------------------------
+$gitStatus = git status --porcelain 2>&1
+if ($LASTEXITCODE -eq 0 -and $gitStatus) {
+    $changedCount = @($gitStatus | Where-Object { $_ }).Count
+    Write-Host "WARNING: The project has $changedCount uncommitted file(s):" -ForegroundColor Yellow
+    $gitStatus | ForEach-Object { Write-Host "         $_" -ForegroundColor Yellow }
+    Write-Host ""
+    Write-Host "         It is recommended to commit all changes in Studio Pro before" -ForegroundColor Yellow
+    Write-Host "         running Setup, so the review workspace starts from a clean state." -ForegroundColor Yellow
+    Write-Host ""
+    $confirm = (Read-Host "Continue with uncommitted changes? [y/N]").Trim()
+    if ($confirm -ne "y" -and $confirm -ne "Y") {
+        Write-Host "[INFO] Aborted. Commit your changes in Studio Pro and re-run Setup.ps1." -ForegroundColor Yellow
+        exit 0
+    }
+    Write-Host ""
+}
+
 # -- Step 3: Determine review root path ----------------------------------------
 $sourceLeaf   = Split-Path $sourcePath -Leaf
 $sourceParent = Split-Path $sourcePath -Parent
@@ -134,7 +168,7 @@ Write-Host ""
 foreach ($dest in @("v1", "v2", "diff")) {
     $destPath = "$ReviewRoot\$dest"
     Write-Host "[COPY] Copying source project to $dest\ (this may take several minutes)..."
-    robocopy $sourcePath $destPath /E /XD "deployment" /NP /NDL /NFL
+    robocopy $sourcePath $destPath /E /XD "deployment" ".mendix-cache" "packages" "releases" /XF "*.mpr.lock" /NP /NDL /NFL
     if ($LASTEXITCODE -ge 8) {
         Write-Host ""
         Write-Host "ERROR: robocopy failed while copying to $dest\" -ForegroundColor Red
