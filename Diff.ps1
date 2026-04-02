@@ -237,6 +237,66 @@ try {
 }
 
 
+function Show-WorkspaceState {
+    Write-Host "----------------------------------------------------------------"
+    $commitsFile = Join-Path $ReviewRoot "commits.selected.ps1"
+
+    if (-not (Test-Path "$ReviewRoot\diff\.git")) {
+        Write-Host "  Workspace:  UNKNOWN - diff\.git is missing" -ForegroundColor Yellow
+        Write-Host "              Re-run Setup.ps1 or use option 1 to start a review."
+        Write-Host ""
+        return
+    }
+
+    if (-not (Test-Path $commitsFile)) {
+        Write-Host "  Workspace:  Ready - no review started yet" -ForegroundColor Gray
+        Write-Host "              Use option 1 to begin a review."
+        Write-Host ""
+        return
+    }
+
+    $CommitA = $null; $CommitB = $null
+    . $commitsFile
+
+    if (-not $CommitA -or -not $CommitB) {
+        Write-Host "  Workspace:  UNKNOWN - could not read commit range" -ForegroundColor Yellow
+        Write-Host ""
+        return
+    }
+
+    $diffHead    = (git -C "$ReviewRoot\diff" rev-parse HEAD 2>&1).Trim()
+    $diffChanges = @(git -C "$ReviewRoot\diff" status --porcelain 2>&1 | Where-Object { $_ }).Count
+
+    if ($diffHead -eq $CommitA) {
+        $v1Info = (git -C "$ReviewRoot\v1" log -1 --pretty=format:"%h  %ad  %s" --date=short HEAD 2>&1).Trim()
+        $v2Info = (git -C "$ReviewRoot\v2" log -1 --pretty=format:"%h  %ad  %s" --date=short HEAD 2>&1).Trim()
+        Write-Host "  Workspace:  REVIEWING" -ForegroundColor Cyan
+        Write-Host "  Base (A):   $v1Info"
+        Write-Host "  Tip  (B):   $v2Info"
+        if ($diffChanges -gt 0) {
+            Write-Host "  Changes:    $diffChanges file(s) modified in diff\" -ForegroundColor Yellow
+        } else {
+            Write-Host "  Changes:    none yet"
+        }
+    } elseif ($diffHead -eq $CommitB) {
+        $v2Info = (git -C "$ReviewRoot\v2" log -1 --pretty=format:"%h  %ad  %s" --date=short HEAD 2>&1).Trim()
+        Write-Host "  Workspace:  FINISH REVIEW - commit your fixes in Studio Pro" -ForegroundColor Yellow
+        Write-Host "  On commit:  $v2Info"
+        if ($diffChanges -gt 0) {
+            Write-Host "  Fixes:      $diffChanges file(s) uncommitted in diff\" -ForegroundColor Green
+        } else {
+            Write-Host "  Fixes:      none yet - make changes in Studio Pro first"
+        }
+    } else {
+        Write-Host "  Workspace:  UNKNOWN - diff\ is not at CommitA or CommitB" -ForegroundColor Yellow
+        Write-Host "              Use option 1 (Start review) to reset the workspace."
+    }
+
+    Write-Host "----------------------------------------------------------------"
+    Write-Host ""
+}
+
+
 # ==============================================================================
 # Action functions
 # ==============================================================================
@@ -577,6 +637,7 @@ function Show-Help {
 # ==============================================================================
 
 while ($true) {
+    Show-WorkspaceState
     Write-Host "What would you like to do?"
     Write-Host "  1. Start review"
     Write-Host "  2. Continue review"
@@ -599,7 +660,5 @@ while ($true) {
         default { Write-Host "  Please enter a number between 1 and 5, or Q to quit." -ForegroundColor Yellow }
     }
 
-    Write-Host ""
-    Write-Host "----------------------------------------------------------------"
     Write-Host ""
 }
