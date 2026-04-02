@@ -177,7 +177,7 @@ function Draw-CommitList {
 
     # Status line
     if ($Phase -eq 1) {
-        Write-Host "  [Phase 1] Navigate with UP/DOWN. Press ENTER to set range start. Q/ESC to quit." -ForegroundColor DarkGray
+        Write-Host "  [Phase 1] Navigate with UP/DOWN. Press ENTER / SPACE to set range start. Q/ESC to quit." -ForegroundColor DarkGray
         Write-Host "                                                                                    " # blank line to clear stale Phase 2 text
     } else {
         $startNum = $RangeStart + 1
@@ -188,7 +188,7 @@ function Draw-CommitList {
         $shortB = $Commits[$RangeStart].ShortHash
         $shortA = if (($RangeEnd + 1) -lt $Commits.Count) { $Commits[$RangeEnd + 1].ShortHash } else { "??" }
 
-        Write-Host "  [Phase 2] Navigate DOWN to extend range end. ENTER to confirm. ESC to reset.    " -ForegroundColor DarkGray
+        Write-Host "  [Phase 2] Navigate DOWN to extend range end. ENTER / SPACE to confirm. ESC to reset.    " -ForegroundColor DarkGray
         Write-Host "  Range: $startNum-$endNum  |  CommitB (tip): $shortB  |  CommitA (base): $shortA  " -ForegroundColor Green
     }
 }
@@ -233,7 +233,7 @@ try {
                     $rangeEnd = $cursorPos
                 }
             }
-            "Enter" {
+            { $_ -eq "Enter" -or ($key.KeyChar -eq ' ') } {
                 if ($phase -eq 1) {
                     $rangeStart = $cursorPos
                     $rangeEnd   = $cursorPos

@@ -300,6 +300,23 @@ function Invoke-StartReview {
     Write-Host "[OK]   PAT verified."
     Write-Host ""
 
+    # Resolve the remote default branch so v2 can be re-attached to a named branch
+    # after checkout FETCH_HEAD (required for Studio Pro to allow commits after Finish Review).
+    $defaultBranch = "main"   # fallback
+    $symrefOutput = Invoke-GitWithPAT -GitArgs @("ls-remote", "--symref", $originUrl, "HEAD") -PAT $PAT 2>&1
+    if ($LASTEXITCODE -eq 0 -and $symrefOutput) {
+        $symrefLine = ($symrefOutput -split "`n" | Where-Object { $_ -match "^ref: refs/heads/" } | Select-Object -First 1)
+        if ($symrefLine -match "^ref: refs/heads/([^\t]+)") {
+            $defaultBranch = $Matches[1].Trim()
+            Write-Host "[INFO] Default branch resolved: $defaultBranch"
+        } else {
+            Write-Host "[WARN] Could not parse branch from ls-remote output. Falling back to 'main'." -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "[WARN] ls-remote --symref failed. Falling back to default branch 'main'." -ForegroundColor Yellow
+    }
+    Write-Host ""
+
     # Step 3: Refresh recent history in v1\ so SelectCommits can show up-to-date commits.
     # After a previous review, v1\ is a shallow clone at a single commit. Fetching here
     # gives git log enough history to populate the selector.
@@ -400,6 +417,21 @@ function Invoke-StartReview {
         Write-Host ""
         return
     }
+
+    # Re-attach v2 HEAD to a named branch. Without this, v2\.git has a detached HEAD
+    # (raw SHA), which Invoke-FinishReview copies into diff\.git — blocking Studio Pro commits.
+    git -C "$ReviewRoot\v2" checkout -B $defaultBranch
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host ""
+        Write-Host "ERROR: Could not create branch '$defaultBranch' in v2\." -ForegroundColor Red
+        Write-Host "       Studio Pro will not be able to commit after Finish Review." -ForegroundColor Red
+        Write-Host ""
+        Write-Host "HOW TO FIX:" -ForegroundColor Yellow
+        Write-Host "  Run manually: git -C `"$ReviewRoot\v2`" checkout -B main" -ForegroundColor Yellow
+        Write-Host ""
+        return
+    }
+    Write-Host "[INFO] v2\ HEAD attached to branch '$defaultBranch'."
     Write-Host "[OK]   v2\ is at CommitB."
     Write-Host ""
 

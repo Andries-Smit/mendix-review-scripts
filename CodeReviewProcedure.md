@@ -84,6 +84,20 @@ git reset --hard <later-commit-hash>
 # Example: git reset --hard dd17c15d
 ```
 
+After resetting, confirm that `v2_newer` is still on a named branch (not in detached HEAD):
+
+```
+git branch
+```
+
+You should see a line like `* main`. If you see `* (HEAD detached at ...)`, re-attach HEAD to the branch before continuing:
+
+```
+git checkout -B main
+```
+
+> **Why this matters:** Studio Pro requires the working copy to be on a named branch to allow commits. When you swap the `.git` folder back in Step 9, `diff` inherits the HEAD state of `v2_newer`. A detached HEAD in `v2_newer` will block Studio Pro from committing your review fixes.
+
 ### Step 5 — Reset `diff` to the later commit
 
 The commit is the same commit as step 4 (**RC3** in the picture).
