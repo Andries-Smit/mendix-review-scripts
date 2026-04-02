@@ -21,6 +21,21 @@ Write-Host "This setup script runs ONCE to create the workspace."
 Write-Host "Afterwards, use Diff.ps1 in the review root to manage reviews."
 Write-Host ""
 
+# -- Step 1b: Verify git is available ------------------------------------------
+$gitVersion = git --version 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host ""
+    Write-Host "ERROR: git was not found on your PATH." -ForegroundColor Red
+    Write-Host ""
+    Write-Host "HOW TO FIX:" -ForegroundColor Yellow
+    Write-Host "  Install Git for Windows from https://git-scm.com/download/win" -ForegroundColor Yellow
+    Write-Host "  After installation, close and reopen this PowerShell window, then re-run Setup.ps1." -ForegroundColor Yellow
+    Write-Host ""
+    exit 1
+}
+Write-Host "[OK] git found: $gitVersion"
+Write-Host ""
+
 # -- Step 2: Validate source folder --------------------------------------------
 $mprFiles = @(Get-ChildItem -Path . -Filter "*.mpr" -File)
 

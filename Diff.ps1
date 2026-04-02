@@ -25,6 +25,57 @@ if (-not (Test-Path $storePatScript)) {
 # Helper functions
 # ==============================================================================
 
+function Invoke-GitWithPAT {
+    <#
+    .SYNOPSIS
+        Run a git command with PAT credentials injected via GIT_ASKPASS,
+        keeping the token out of the process command line.
+    .PARAMETER GitArgs
+        All arguments to pass to git (as an array).
+    .PARAMETER PAT
+        The Personal Access Token as a plain string (in memory only).
+    #>
+    param(
+        [string[]]$GitArgs,
+        [string]$PAT
+    )
+    # Write a minimal ASKPASS helper to a temp .cmd file.
+    # git calls this when it needs a password; the script echoes the PAT.
+    # The file is removed immediately after the git call completes.
+    $cmdPath = Join-Path $env:TEMP "mendix_askpass_$PID.cmd"
+    Set-Content -Path $cmdPath -Value "@echo off`r`necho $PAT" -Encoding ASCII
+    $prev = $env:GIT_ASKPASS
+    $env:GIT_ASKPASS = $cmdPath
+    try {
+        git -c credential.username=pat @GitArgs
+        return $LASTEXITCODE
+    } finally {
+        $env:GIT_ASKPASS = $prev
+        Remove-Item -Path $cmdPath -ErrorAction SilentlyContinue
+    }
+}
+
+function Exit-Script {
+    param([int]$Code = 0)
+    try { Stop-Transcript | Out-Null } catch { }
+    exit $Code
+}
+
+function Find-StudioProExe {
+    # Mendix installs versions side-by-side under C:\Program Files\Mendix\<version>\studiopro.exe.
+    # Return the path to the newest installed version, or $null if none found.
+    $mendixRoot = "C:\Program Files\Mendix"
+    if (-not (Test-Path $mendixRoot)) { return $null }
+    $exe = Get-ChildItem -Path $mendixRoot -Recurse -Filter "studiopro.exe" -ErrorAction SilentlyContinue |
+           Sort-Object FullName -Descending |
+           Select-Object -First 1
+    return $exe?.FullName
+}
+
+function Test-StudioProInstalled {
+    return ($null -ne (Find-StudioProExe))
+}
+
 function Open-StudioPro {
     $mprFile = @(Get-ChildItem -Path "$ReviewRoot\diff" -Filter "*.mpr" -File)
     if ($mprFile.Count -ne 1) {
@@ -40,8 +91,7 @@ function Open-StudioPro {
 
     $mprPath = $mprFile[0].FullName
     Write-Host "[OPEN] Opening: $mprPath"
-    # Open via file association — Windows picks the correct Studio Pro version automatically,
-    # the same way double-clicking the .mpr file would.
+    # Open via file association — Windows selects the correct Studio Pro version automatically.
     Start-Process -FilePath $mprPath
     Write-Host "[OK]   Studio Pro is starting."
     return $true
@@ -69,6 +119,21 @@ function Remove-DiffGit {
 
 function Copy-GitInto {
     param([string]$SourceGit, [string]$DestGit)
+
+    # Guard: if DestGit already exists, Copy-Item would create a double-nested .git\.git.
+    # Remove-DiffGit must always be called before this function.
+    if (Test-Path $DestGit) {
+        Write-Host ""
+        Write-Host "ERROR: Destination .git already exists and was not removed before Copy-GitInto." -ForegroundColor Red
+        Write-Host "       Destination: $DestGit" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "HOW TO FIX:" -ForegroundColor Yellow
+        Write-Host "  Close Studio Pro and any git tools that may have open handles in diff\.git," -ForegroundColor Yellow
+        Write-Host "  then try again." -ForegroundColor Yellow
+        Write-Host ""
+        return $false
+    }
+
     try {
         Copy-Item -Recurse -Path $SourceGit -Destination $DestGit
         return $true
@@ -147,6 +212,30 @@ Write-Host "================================================================" -F
 Write-Host "    Review root: $ReviewRoot"
 Write-Host ""
 
+# -- Verify git is available ---------------------------------------------------
+$gitVersion = git --version 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host ""
+    Write-Host "ERROR: git was not found on your PATH." -ForegroundColor Red
+    Write-Host ""
+    Write-Host "HOW TO FIX:" -ForegroundColor Yellow
+    Write-Host "  Install Git for Windows from https://git-scm.com/download/win" -ForegroundColor Yellow
+    Write-Host "  After installation, close and reopen this PowerShell window, then re-run Diff.ps1." -ForegroundColor Yellow
+    Write-Host ""
+    exit 1
+}
+
+# -- Start transcript logging --------------------------------------------------
+$transcriptPath = Join-Path $ReviewRoot "review.log"
+try {
+    Start-Transcript -Path $transcriptPath -Append | Out-Null
+    Write-Host "[LOG]  Session transcript: $transcriptPath"
+    Write-Host ""
+} catch {
+    Write-Host "[WARN] Could not start transcript: $($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host ""
+}
+
 
 # ==============================================================================
 # Action functions
@@ -161,14 +250,18 @@ function Invoke-StartReview {
             Write-Host "[WARN] Could not check git status in diff\ (exit code $LASTEXITCODE). Proceeding anyway." -ForegroundColor Yellow
         } elseif ($gitStatus) {
             Write-Host ""
-            Write-Host "ERROR: There are uncommitted changes in the diff\ folder." -ForegroundColor Red
-            Write-Host "       Starting a new review would overwrite them." -ForegroundColor Red
+            Write-Host "WARNING: There are uncommitted changes in the diff\ folder." -ForegroundColor Yellow
+            Write-Host "         Starting a new review will overwrite them permanently." -ForegroundColor Yellow
             Write-Host ""
-            Write-Host "HOW TO FIX:" -ForegroundColor Yellow
-            Write-Host "  Use option 3 (Finish Review) to complete the current review first." -ForegroundColor Yellow
-            Write-Host "  Or use option 2 (Continue Review) to reopen Studio Pro and finish reviewing." -ForegroundColor Yellow
+            Write-Host "  To preserve them: use option 3 (Finish Review) first." -ForegroundColor Yellow
             Write-Host ""
-            return
+            $confirm = (Read-Host "Proceed and discard uncommitted changes? [y/N]").Trim()
+            if ($confirm -ne "y" -and $confirm -ne "Y") {
+                Write-Host "[INFO] Cancelled. Returning to menu." -ForegroundColor Yellow
+                return
+            }
+            Write-Host "[INFO] Proceeding. Uncommitted changes in diff\ will be overwritten."
+            Write-Host ""
         }
     }
 
@@ -188,12 +281,11 @@ function Invoke-StartReview {
         return
     }
 
-    $authUrl = $originUrl -replace "^https://", "https://pat:$PAT@"
-    $lsRemote = git ls-remote $authUrl HEAD 2>&1
+    $lsRemote = Invoke-GitWithPAT -GitArgs @("ls-remote", $originUrl, "HEAD") -PAT $PAT 2>&1
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "$authUrl"
         Write-Host ""
         Write-Host "ERROR: The stored PAT could not authenticate with the Mendix git server." -ForegroundColor Red
+        Write-Host "       Remote:          $originUrl" -ForegroundColor Red
         Write-Host "       Server response: $lsRemote" -ForegroundColor Red
         Write-Host ""
         Write-Host "HOW TO FIX:" -ForegroundColor Yellow
@@ -208,7 +300,16 @@ function Invoke-StartReview {
     Write-Host "[OK]   PAT verified."
     Write-Host ""
 
-    # Step 3: Select commit range
+    # Step 3: Refresh recent history in v1\ so SelectCommits can show up-to-date commits.
+    # After a previous review, v1\ is a shallow clone at a single commit. Fetching here
+    # gives git log enough history to populate the selector.
+    Write-Host "[FETCH] Refreshing commit history in v1\ ..."
+    Invoke-GitWithPAT -GitArgs @("-C", "$ReviewRoot\v1", "fetch", "--depth", "50", $originUrl) -PAT $PAT | Out-Null
+    git -C "$ReviewRoot\v1" checkout FETCH_HEAD --quiet 2>$null
+    Write-Host "[OK]   History refreshed."
+    Write-Host ""
+
+    # Step 3b: Select commit range
     $selectScript = Join-Path $PSScriptRoot "SelectCommits.ps1"
     if (-not (Test-Path $selectScript)) {
         Write-Host ""
@@ -254,7 +355,7 @@ function Invoke-StartReview {
 
     # Step 4: Update v1\ to CommitA
     Write-Host "[FETCH] Fetching CommitA into v1\ ..."
-    git -C "$ReviewRoot\v1" fetch --depth 1 $authUrl $CommitA
+    Invoke-GitWithPAT -GitArgs @("-C", "$ReviewRoot\v1", "fetch", "--depth", "1", $originUrl, $CommitA) -PAT $PAT
     if ($LASTEXITCODE -ne 0) {
         Write-Host ""
         Write-Host "ERROR: git fetch failed for CommitA in v1\." -ForegroundColor Red
@@ -277,15 +378,18 @@ function Invoke-StartReview {
 
     # Step 5: Update v2\ to CommitB
     Write-Host "[FETCH] Fetching CommitB into v2\ ..."
-    git -C "$ReviewRoot\v2" fetch --depth 1 $authUrl $CommitB
+    Invoke-GitWithPAT -GitArgs @("-C", "$ReviewRoot\v2", "fetch", "--depth", "1", $originUrl, $CommitB) -PAT $PAT
     if ($LASTEXITCODE -ne 0) {
         Write-Host ""
         Write-Host "ERROR: git fetch failed for CommitB in v2\." -ForegroundColor Red
         Write-Host "       Commit: $CommitB" -ForegroundColor Red
+        Write-Host "       Note: v1\ has already been updated to CommitA." -ForegroundColor Red
+        Write-Host "       The workspace is in a partially updated state." -ForegroundColor Red
         Write-Host ""
         Write-Host "HOW TO FIX:" -ForegroundColor Yellow
         Write-Host "  Verify the commit hash is valid and accessible on the remote." -ForegroundColor Yellow
         Write-Host "  Check your network connection and PAT (use option 4 to update PAT)." -ForegroundColor Yellow
+        Write-Host "  Then run option 1 (Start Review) again." -ForegroundColor Yellow
         Write-Host ""
         return
     }
@@ -301,7 +405,7 @@ function Invoke-StartReview {
 
     # Step 6: Prepare diff\ folder
     Write-Host "[DIFF] Syncing v2\ files into diff\ ..."
-    robocopy "$ReviewRoot\v2" "$ReviewRoot\diff" /E /IS /IT /XD "deployment" ".git" /NP /NDL /NFL
+    robocopy "$ReviewRoot\v2" "$ReviewRoot\diff" /E /IS /IT /PURGE /XD "deployment" ".git" /NP /NDL /NFL
     if ($LASTEXITCODE -ge 8) {
         Write-Host ""
         Write-Host "ERROR: robocopy failed while syncing files into diff\." -ForegroundColor Red
@@ -335,9 +439,13 @@ function Invoke-StartReview {
     while ($true) {
         $choice = (Read-Host "Enter choice (1, 2 or 3)").Trim()
         switch ($choice) {
-            "1" { Write-Host ""; Write-Host "Exiting. Run Diff.ps1 again and choose option 2 (Continue review) to resume."; exit 0 }
+            "1" {
+                Write-Host ""
+                Write-Host "[INFO] Returning to main menu. Choose option 2 (Continue review) to reopen Studio Pro."
+                return
+            }
             "2" { Invoke-FinishReview; return }
-            "3" { Write-Host ""; Write-Host "Exiting."; exit 0 }
+            "3" { Write-Host ""; Write-Host "Exiting."; Exit-Script 0 }
             default { Write-Host "  Please enter 1, 2 or 3." }
         }
     }
@@ -455,7 +563,7 @@ while ($true) {
         "3" { Invoke-FinishReview }
         "4" { Invoke-ChangePAT }
         "5" { Show-Help }
-        { $_ -eq "Q" -or $_ -eq "q" } { Write-Host "Goodbye."; exit 0 }
+        { $_ -eq "Q" -or $_ -eq "q" } { Write-Host "Goodbye."; Exit-Script 0 }
         default { Write-Host "  Please enter a number between 1 and 5, or Q to quit." -ForegroundColor Yellow }
     }
 

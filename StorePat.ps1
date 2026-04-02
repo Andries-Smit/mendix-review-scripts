@@ -26,9 +26,9 @@ function Get-StoredPAT {
     $cred = Get-StoredCredential -Target $CredentialName -ErrorAction SilentlyContinue
 
     if (-not $cred) {
-        Write-Host "Checking Windows Credential Mananger"
+        Write-Host "Checking Windows Credential Manager"
         Write-Host "No stored PAT found. You will be prompted once." -ForegroundColor Yellow
-        Write-Host "Your PAT will be stored in you Windows Credential Mananger, and only accessible by you"
+        Write-Host "Your PAT will be stored in your Windows Credential Manager, and only accessible by you"
 
         $securePAT = Read-Host -Prompt "Enter your Personal Access Token" -AsSecureString
 
@@ -52,7 +52,7 @@ function Get-StoredPAT {
                 -UserName $env:USERNAME `
                 -SecurePassword $securePAT `
                 -Type Generic `
-                -Persist LocalMachine | Out-Null
+                -Persist CurrentUser | Out-Null
         } catch {
             Write-Host ""
             Write-Host "ERROR: Failed to save the PAT to Windows Credential Manager." -ForegroundColor Red

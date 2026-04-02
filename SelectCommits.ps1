@@ -5,15 +5,21 @@
 # ─────────────────────────────────────────────
 
 param(
-    [string]$RepoPath  = "",
-    [int]   $Count     = 30,
-    [string]$OutputFile = "commits.selected.ps1"
+    [string]$RepoPath   = "",
+    [int]   $Count      = 30,
+    [string]$OutputFile = ""   # Always pass this explicitly when calling from Diff.ps1
 )
+
+# ── Resolve output file path ────────────────────────────────────────────────
+if (-not $OutputFile) {
+    $OutputFile = Join-Path (Get-Location).Path "commits.selected.ps1"
+    Write-Host "[WARN] -OutputFile not specified. Defaulting to: $OutputFile" -ForegroundColor Yellow
+}
 
 # ── Resolve repo path ───────────────────────────────────────────────────────
 if (-not $RepoPath) {
-    $input = Read-Host "[INPUT] Git repository path (leave blank for current directory)"
-    $RepoPath = if ($input) { $input } else { (Get-Location).Path }
+    $userInput = Read-Host "[INPUT] Git repository path (leave blank for current directory)"
+    $RepoPath = if ($userInput) { $userInput } else { (Get-Location).Path }
 }
 
 $RepoPath = [IO.Path]::GetFullPath($RepoPath)
@@ -322,13 +328,4 @@ Set-Content -Path $outputPath -Value $content -Encoding UTF8
 
 Write-Host ""
 Write-Host "[OUT] Written to: $outputPath"
-Write-Host ""
-Write-Host "  Usage:"
-Write-Host "    1. Dot-source then run MendixDiff:"
-Write-Host "         . `"$outputPath`""
-Write-Host "         .\MendixDiff.ps1"
-Write-Host ""
-Write-Host "    2. Or paste into MendixDiff.ps1 config block:"
-Write-Host "         `$CommitA = `"$CommitA`""
-Write-Host "         `$CommitB = `"$CommitB`""
 Write-Host ""
