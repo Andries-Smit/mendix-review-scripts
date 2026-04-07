@@ -137,58 +137,43 @@ if (Test-Path $ReviewRoot) {
     exit 1
 }
 
-# -- Step 5: Create folder structure -------------------------------------------
-Write-Host "[SETUP] Creating review folder structure..."
-try {
-    New-Item -ItemType Directory -Path "$ReviewRoot\v1"   | Out-Null
-    New-Item -ItemType Directory -Path "$ReviewRoot\v2"   | Out-Null
-    New-Item -ItemType Directory -Path "$ReviewRoot\diff" | Out-Null
-    Write-Host "[OK]   Created: $ReviewRoot\v1"
-    Write-Host "[OK]   Created: $ReviewRoot\v2"
-    Write-Host "[OK]   Created: $ReviewRoot\diff"
-} catch {
-    Write-Host ""
-    Write-Host "ERROR: Failed to create the review folder structure." -ForegroundColor Red
-    Write-Host "       $($_.Exception.Message)" -ForegroundColor Red
-    Write-Host ""
-    Write-Host "HOW TO FIX:" -ForegroundColor Yellow
-    Write-Host "  Check that you have write permission to: $(Split-Path $ReviewRoot -Parent)" -ForegroundColor Yellow
-    Write-Host "  Also make sure the path does not contain invalid characters." -ForegroundColor Yellow
-    Write-Host ""
-    if (Test-Path $ReviewRoot) {
-        Remove-Item -Recurse -Force $ReviewRoot -ErrorAction SilentlyContinue
-    }
-    exit 1
-}
-Write-Host ""
+# -- Step 5: Clone source into v1, v2, diff ------------------------------------
+# git clone --local hardlinks .git/objects instead of copying them, which is
+# significantly faster for projects with large git histories. Only git-tracked
+# files are checked out; untracked artefacts (deployment output, cache) are not
+# needed in the review workspace.
+#
+# git clone sets origin to the local source path; restore it to the real Mendix
+# remote so Studio Pro authenticates against the correct server.
 
-# -- Step 6: Copy source into v1, v2, diff -------------------------------------
-# robocopy is used instead of Copy-Item because Mendix projects contain deep
-# node_modules trees that exceed the MAX_PATH limit. robocopy handles this
-# natively. Exit codes 0-7 are all non-error variants; 8+ indicate failures.
+$sourceOriginUrl = git -C $sourcePath remote get-url origin 2>$null
+$hasOrigin = ($LASTEXITCODE -eq 0) -and ($sourceOriginUrl -match '\S')
 
 foreach ($dest in @("v1", "v2", "diff")) {
     $destPath = "$ReviewRoot\$dest"
-    Write-Host "[COPY] Copying source project to $dest\ (this may take several minutes)..."
-    robocopy $sourcePath $destPath /E /XD "deployment" ".mendix-cache" "packages" "releases" /XF "*.mpr.lock" /NP /NDL /NFL
-    if ($LASTEXITCODE -ge 8) {
+    Write-Host "[COPY] Cloning source project into $dest\ (this may take several minutes for large projects)..."
+    git clone --local $sourcePath $destPath
+    if ($LASTEXITCODE -ne 0) {
         Write-Host ""
-        Write-Host "ERROR: robocopy failed while copying to $dest\" -ForegroundColor Red
-        Write-Host "       robocopy exit code: $LASTEXITCODE" -ForegroundColor Red
+        Write-Host "ERROR: git clone failed while creating $dest\" -ForegroundColor Red
+        Write-Host "       git exit code: $LASTEXITCODE" -ForegroundColor Red
         Write-Host ""
         Write-Host "HOW TO FIX:" -ForegroundColor Yellow
         Write-Host "  Check available disk space and write permissions on:" -ForegroundColor Yellow
-        Write-Host "    $destPath" -ForegroundColor Yellow
+        Write-Host "    $ReviewRoot" -ForegroundColor Yellow
         Write-Host "  Then delete the review root and re-run Setup.ps1:" -ForegroundColor Yellow
         Write-Host "    Remove-Item -Recurse -Force `"$ReviewRoot`"" -ForegroundColor Yellow
         Write-Host ""
         exit 1
     }
-    Write-Host "[OK]   Copy to $dest\ complete."
+    if ($hasOrigin) {
+        git -C $destPath remote set-url origin $sourceOriginUrl
+    }
+    Write-Host "[OK]   Clone to $dest\ complete."
     Write-Host ""
 }
 
-# -- Step 7: Copy scripts into the review root ---------------------------------
+# -- Step 6: Copy scripts into the review root ---------------------------------
 foreach ($scriptName in @("Diff.ps1", "StorePat.ps1", "SelectCommits.ps1")) {
     $scriptSrc = Join-Path $PSScriptRoot $scriptName
     if (Test-Path $scriptSrc) {
@@ -217,7 +202,7 @@ foreach ($scriptName in @("Diff.ps1", "StorePat.ps1", "SelectCommits.ps1")) {
 }
 Write-Host ""
 
-# -- Step 8: Done message ------------------------------------------------------
+# -- Step 7: Done message ------------------------------------------------------
 Write-Host "================================================================" -ForegroundColor Green
 Write-Host "  Setup complete!" -ForegroundColor Green
 Write-Host "================================================================" -ForegroundColor Green
