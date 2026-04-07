@@ -82,6 +82,8 @@ What would you like to do?
 
 Enter `Q` at the menu to quit.
 
+### Start review — selecting commits - Step 1
+
 On **Start review** select the commits you would like to review
 
 ```
@@ -97,6 +99,21 @@ On **Start review** select the commits you would like to review
      6     c95db44  2026-04-02  Jhon Doe            Initial app upload.
 ```
 ---
+
+### Applying changes from a review, in step 3
+
+> **Experimental — handle with care.**  
+> Making and committing changes from inside the review workspace is supported, but is not the primary use-case of this tool.
+
+This tool fills a gap: ideally Mendix Studio Pro would have native support for reviewing a commit range and applying reviewer fixes directly. Until that exists, you can use **Finish review** to commit your changes back to the branch.
+
+**How it works:** Finish review swaps the `diff\` workspace to the v2 baseline, so only your own edits appear as local modifications. You can then review and commit those changes in Studio Pro.
+
+**Limitations to be aware of:**
+
+- **Rebasing requirement when not at HEAD.** If the reviewed commits are not at the tip of the branch, you will need to rebase your fix commit onto HEAD after committing. Without this your changes target an older tree and will require conflict resolution during the rebase.
+
+- **Keep changes small.** Every change you commit from the review workspace becomes a potential source of merge conflicts for any commits that follow the reviewed range. Large refactoring changes are strongly recommended to be done directly at the HEAD of the branch instead, where conflict surface is minimal.
 
 ## How it works (short version)
 

@@ -97,8 +97,8 @@ function Test-DiffProjectOpen {
            Select-Object -First 1
     if ($mpr -and (Test-Path ($mpr.FullName + ".lock"))) {
         Write-Host ""
-        Write-Host "WARNING: Studio Pro still has the diff project open." -ForegroundColor Yellow
-        Write-Host "         Close Studio Pro, then re-run this option." -ForegroundColor Yellow
+        Write-Host "ERROR: Studio Pro still has the diff project open." -ForegroundColor Red
+        Write-Host "         Close Studio Pro, then re-run this option." -ForegroundColor Red
         Write-Host ""
         return $true
     }
