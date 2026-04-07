@@ -517,7 +517,7 @@ function Invoke-StartReview {
 
     # Step 6: Prepare diff\ folder
     Write-Host "[DIFF] Syncing v2\ files into diff\ ..."
-    robocopy "$ReviewRoot\v2" "$ReviewRoot\diff" /E /IS /IT /PURGE /XD "deployment" ".git" /NP /NDL /NFL
+    robocopy "$ReviewRoot\v2" "$ReviewRoot\diff" /E /IS /IT /PURGE /XD "deployment" ".git" ".mendix-cache" /NP /NDL /NFL
     if ($LASTEXITCODE -ge 8) {
         Write-Host ""
         Write-Host "ERROR: robocopy failed while syncing files into diff\." -ForegroundColor Red
