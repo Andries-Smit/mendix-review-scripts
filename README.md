@@ -1,8 +1,8 @@
 # Mendix Code Review Tool
 
-Automates the diff-folder review process described in [CodeReviewProcedure.md](CodeReviewProcedure.md).
+Automates the diff-folder review process described in [CodeReviewProcedure.md](docs/CodeReviewProcedure.md).
 
-> **Before using these scripts, read [CodeReviewProcedure.md](CodeReviewProcedure.md) and complete the process manually at least once.**  
+> **Before using these scripts, read [CodeReviewProcedure.md](docs/CodeReviewProcedure.md) and complete the process manually at least once.**  
 > The scripts automate steps you need to understand first. If something goes wrong, you will not know how to recover without that background.
 
 ---
@@ -118,6 +118,6 @@ This tool fills a gap: ideally Mendix Studio Pro would have native support for r
 
 ## How it works (short version)
 
-See [CodeReviewProcedure.md](CodeReviewProcedure.md) for the full explanation.
+See [CodeReviewProcedure.md](docs/CodeReviewProcedure.md) for the full explanation.
 
 In short: the `diff\` folder contains the **new files** (CommitB) but the **old git history** (CommitA). Studio Pro sees the gap between them and presents every change as a local modification — giving you a clean visual diff of everything that changed across your selected commits.
