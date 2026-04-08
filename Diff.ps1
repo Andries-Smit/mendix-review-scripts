@@ -5,7 +5,7 @@
 
 $ReviewRoot            = (Get-Location).Path
 $script:CredentialName = "MendixReview_PAT"
-$script:ScriptVersion  = "1.1"
+$script:ScriptVersion  = "0.1.0"
 $script:LogFile        = Join-Path $ReviewRoot "review.log"
 
 function Write-Log {
