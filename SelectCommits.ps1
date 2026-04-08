@@ -24,7 +24,9 @@ function Draw-CommitList {
         [int]   $RangeEnd,
         [int]   $Phase,        # 1 or 2
         [array] $Commits,
-        [int]   $StartRow
+        [int]   $StartRow,
+        [int]   $ViewOffset,
+        [int]   $ViewportSize
     )
 
     $li = 0   # line index — incremented after each Write-Host
@@ -36,7 +38,8 @@ function Draw-CommitList {
     [Console]::SetCursorPosition(0, $StartRow + $li++); Write-Host $header.PadRight($w)
     [Console]::SetCursorPosition(0, $StartRow + $li++); Write-Host $divider.PadRight($w)
 
-    for ($i = 0; $i -lt $Commits.Count; $i++) {
+    $viewEnd = [Math]::Min($ViewOffset + $ViewportSize, $Commits.Count) - 1
+    for ($i = $ViewOffset; $i -le $viewEnd; $i++) {
         $c       = $Commits[$i]
         $num     = ($i + 1).ToString().PadLeft(3)
         $author  = Truncate $c.Author  18
@@ -93,6 +96,12 @@ function Draw-CommitList {
         } else {
             Write-Host $line.PadRight($w)
         }
+    }
+
+    if ($Commits.Count -gt $ViewportSize) {
+        $shown = [Math]::Min($ViewOffset + $ViewportSize, $Commits.Count)
+        $indicator = "  --- showing $($ViewOffset + 1)-$shown of $($Commits.Count) (scroll for more) ---"
+        [Console]::SetCursorPosition(0, $StartRow + $li++); Write-Host $indicator.PadRight($w) -ForegroundColor DarkGray
     }
 
     [Console]::SetCursorPosition(0, $StartRow + $li++); Write-Host "".PadRight($w)
@@ -215,16 +224,30 @@ if ($MyInvocation.InvocationName -ne '.') {
     $phase      = 1
     $confirmed  = $false
 
+    # How many commit rows fit on screen (2 header + 1 scroll-indicator + 1 blank + 2 status + 1 margin = 7)
+    $viewportSize = [Math]::Max(5, [Console]::WindowHeight - 7)
+    $viewOffset   = 0   # index of first visible commit
+
+    function Update-Viewport {
+        param([int]$Cursor, [ref]$Offset, [int]$Size, [int]$Total)
+        if ($Cursor -lt $Offset.Value) {
+            $Offset.Value = $Cursor
+        } elseif ($Cursor -ge ($Offset.Value + $Size)) {
+            $Offset.Value = $Cursor - $Size + 1
+        }
+        $Offset.Value = [Math]::Max(0, [Math]::Min($Offset.Value, $Total - $Size))
+    }
+
     [Console]::CursorVisible = $false
 
     try {
-        # Scroll the terminal to guarantee room for the full TUI, then pin $startRow
-        $neededLines = $commits.Count + 5   # 2 header + commits + 1 blank + 2 status
+        # Scroll the terminal to guarantee room for the TUI, then pin $startRow
+        $neededLines = $viewportSize + 6   # 2 header + viewport + 1 indicator + 1 blank + 2 status
         Write-Host ("`n" * $neededLines) -NoNewline
-        $startRow   = [Math]::Max(0, [Console]::CursorTop - $neededLines)
+        $startRow    = [Math]::Max(0, [Console]::CursorTop - $neededLines)
         [Console]::SetCursorPosition(0, $startRow)
 
-        $drawnLines = Draw-CommitList -CursorPos $cursorPos -RangeStart $rangeStart -RangeEnd $rangeEnd -Phase $phase -Commits $commits -StartRow $startRow
+        $drawnLines = Draw-CommitList -CursorPos $cursorPos -RangeStart $rangeStart -RangeEnd $rangeEnd -Phase $phase -Commits $commits -StartRow $startRow -ViewOffset $viewOffset -ViewportSize $viewportSize
 
         while ($true) {
             $key = [Console]::ReadKey($true)
@@ -245,12 +268,14 @@ if ($MyInvocation.InvocationName -ne '.') {
                             $rangeEnd = $cursorPos
                         }
                     }
+                    Update-Viewport -Cursor $cursorPos -Offset ([ref]$viewOffset) -Size $viewportSize -Total $commits.Count
                 }
                 "DownArrow" {
                     $cursorPos = [Math]::Min($commits.Count - 1, $cursorPos + 1)
                     if ($phase -eq 2) {
                         $rangeEnd = $cursorPos
                     }
+                    Update-Viewport -Cursor $cursorPos -Offset ([ref]$viewOffset) -Size $viewportSize -Total $commits.Count
                 }
                 { $_ -eq "Enter" -or ($key.KeyChar -eq ' ') } {
                     if ($phase -eq 1) {
@@ -282,12 +307,13 @@ if ($MyInvocation.InvocationName -ne '.') {
 
             if ($confirmed) { break }
 
-            $drawnLines = Draw-CommitList -CursorPos $cursorPos -RangeStart $rangeStart -RangeEnd $rangeEnd -Phase $phase -Commits $commits -StartRow $startRow
+            $drawnLines = Draw-CommitList -CursorPos $cursorPos -RangeStart $rangeStart -RangeEnd $rangeEnd -Phase $phase -Commits $commits -StartRow $startRow -ViewOffset $viewOffset -ViewportSize $viewportSize
         }
     }
     finally {
         [Console]::CursorVisible = $true
-        [Console]::SetCursorPosition(0, $startRow + $drawnLines)
+        $finalRow = [Math]::Min($startRow + $drawnLines, [Console]::BufferHeight - 1)
+        [Console]::SetCursorPosition(0, $finalRow)
     }
 
     Write-Host ""
