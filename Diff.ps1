@@ -517,23 +517,7 @@ function Invoke-StartReview {
     Write-Host ""
 
     # Step 7: Open Studio Pro
-    $opened = Open-StudioPro
-    if (-not $opened) { return }
-
-    # Post-open prompt: focused 2-option menu while Studio Pro is running
-    Write-Host ""
-    while ($true) {
-        Write-Host "  1. Continue later (return to menu)"
-        Write-Host "  2. Finish review  (close Studio Pro first, then switch to final state)"
-        Write-Host ""
-        $postChoice = (Read-Host "Enter choice (1-2)").Trim()
-        Write-Host ""
-        switch ($postChoice) {
-            "1" { return }
-            "2" { Invoke-FinishReview; return }
-            default { Write-Host "  Please enter 1 or 2." -ForegroundColor Yellow }
-        }
-    }
+    Open-StudioPro | Out-Null
 }
 
 function Invoke-ContinueReview {

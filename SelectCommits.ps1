@@ -97,14 +97,18 @@ function Draw-CommitList {
         [int]   $RangeStart,   # -1 = not set
         [int]   $RangeEnd,
         [int]   $Phase,        # 1 or 2
-        [array] $Commits
+        [array] $Commits,
+        [int]   $StartRow
     )
+
+    $li = 0   # line index — incremented after each Write-Host
+    $w  = [Console]::WindowWidth - 1
 
     $header  = "   #      Hash      Date        Author              Subject"
     $divider = "   ---    --------  ----------  ------------------  " + ("-" * 38)
 
-    Write-Host $header
-    Write-Host $divider
+    [Console]::SetCursorPosition(0, $StartRow + $li++); Write-Host $header.PadRight($w)
+    [Console]::SetCursorPosition(0, $StartRow + $li++); Write-Host $divider.PadRight($w)
 
     for ($i = 0; $i -lt $Commits.Count; $i++) {
         $c       = $Commits[$i]
@@ -153,23 +157,24 @@ function Draw-CommitList {
 
         $line = "$prefix $num $bracket $($c.ShortHash)  $($c.Date)  $author  $subject"
 
+        [Console]::SetCursorPosition(0, $StartRow + $li++)
         if ($isCursor -and $Phase -eq 1) {
-            Write-Host $line -ForegroundColor Cyan
+            Write-Host $line.PadRight($w) -ForegroundColor Cyan
         } elseif ($inRange) {
-            Write-Host $line -ForegroundColor Yellow
+            Write-Host $line.PadRight($w) -ForegroundColor Yellow
         } elseif ($isCursor) {
-            Write-Host $line -ForegroundColor Cyan
+            Write-Host $line.PadRight($w) -ForegroundColor Cyan
         } else {
-            Write-Host $line
+            Write-Host $line.PadRight($w)
         }
     }
 
-    Write-Host ""
+    [Console]::SetCursorPosition(0, $StartRow + $li++); Write-Host "".PadRight($w)
 
     # Status line
     if ($Phase -eq 1) {
-        Write-Host "  [Phase 1] Navigate with UP/DOWN. Press ENTER / SPACE to set range start. Q/ESC to quit." -ForegroundColor DarkGray
-        Write-Host "                                                                                    " # blank line to clear stale Phase 2 text
+        [Console]::SetCursorPosition(0, $StartRow + $li++); Write-Host "  [Phase 1] Navigate with UP/DOWN. Press ENTER / SPACE to set range start. Q/ESC to quit.".PadRight($w) -ForegroundColor DarkGray
+        [Console]::SetCursorPosition(0, $StartRow + $li++); Write-Host "".PadRight($w)   # blank line to clear stale Phase 2 text
     } else {
         $startNum = $RangeStart + 1
         $endNum   = $RangeEnd   + 1
@@ -179,9 +184,12 @@ function Draw-CommitList {
         $shortB = $Commits[$RangeStart].ShortHash
         $shortA = if (($RangeEnd + 1) -lt $Commits.Count) { $Commits[$RangeEnd + 1].ShortHash } else { "??" }
 
-        Write-Host "  [Phase 2] Navigate DOWN to extend range end. ENTER / SPACE to confirm. ESC to reset.    " -ForegroundColor DarkGray
-        Write-Host "  Range: $startNum-$endNum  |  CommitB (tip): $shortB  |  CommitA (base): $shortA  " -ForegroundColor Green
+        [Console]::SetCursorPosition(0, $StartRow + $li++); Write-Host "  [Phase 2] Navigate DOWN to extend range end. ENTER / SPACE to confirm. ESC to reset.".PadRight($w) -ForegroundColor DarkGray
+        [Console]::SetCursorPosition(0, $StartRow + $li++); Write-Host "  Range: $startNum-$endNum  |  CommitB (tip): $shortB  |  CommitA (base): $shortA".PadRight($w) -ForegroundColor Green
     }
+
+    # Return total lines drawn so caller can position cursor below the TUI
+    return $li
 }
 
 # ── Interactive selection loop ──────────────────────────────────────────────
@@ -194,9 +202,13 @@ $confirmed  = $false
 [Console]::CursorVisible = $false
 
 try {
-    # Initial draw — save the top row
-    $startRow = [Console]::CursorTop
-    Draw-CommitList -CursorPos $cursorPos -RangeStart $rangeStart -RangeEnd $rangeEnd -Phase $phase -Commits $commits
+    # Scroll the terminal to guarantee room for the full TUI, then pin $startRow
+    $neededLines = $commits.Count + 5   # 2 header + commits + 1 blank + 2 status
+    Write-Host ("`n" * $neededLines) -NoNewline
+    $startRow   = [Math]::Max(0, [Console]::CursorTop - $neededLines)
+    [Console]::SetCursorPosition(0, $startRow)
+
+    $drawnLines = Draw-CommitList -CursorPos $cursorPos -RangeStart $rangeStart -RangeEnd $rangeEnd -Phase $phase -Commits $commits -StartRow $startRow
 
     while ($true) {
         $key = [Console]::ReadKey($true)
@@ -254,12 +266,12 @@ try {
 
         if ($confirmed) { break }
 
-        [Console]::SetCursorPosition(0, $startRow)
-        Draw-CommitList -CursorPos $cursorPos -RangeStart $rangeStart -RangeEnd $rangeEnd -Phase $phase -Commits $commits
+        $drawnLines = Draw-CommitList -CursorPos $cursorPos -RangeStart $rangeStart -RangeEnd $rangeEnd -Phase $phase -Commits $commits -StartRow $startRow
     }
 }
 finally {
     [Console]::CursorVisible = $true
+    [Console]::SetCursorPosition(0, $startRow + $drawnLines)
 }
 
 Write-Host ""
