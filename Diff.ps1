@@ -348,7 +348,6 @@ function Invoke-StartReview {
     # Step 2: PAT authentication and verification
     $PAT = Get-StoredPAT -CredentialName $script:CredentialName
 
-    Write-Host "[AUTH] Verifying PAT against Mendix git server..."
     $originUrl = (git -C "$ReviewRoot\v1" remote get-url origin 2>&1).Trim()
     if ($LASTEXITCODE -ne 0 -or -not $originUrl) {
         Write-Host ""
@@ -360,25 +359,6 @@ function Invoke-StartReview {
         Write-Host ""
         return
     }
-
-    $lsRemote = Invoke-GitWithPAT -GitArgs @("ls-remote", $originUrl, "HEAD") -PAT $PAT 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host ""
-        Write-Host "ERROR: The stored PAT could not authenticate with the Mendix git server." -ForegroundColor Red
-        Write-Host "       Remote:          $originUrl" -ForegroundColor Red
-        Write-Host "       Server response: $lsRemote" -ForegroundColor Red
-        Write-Host ""
-        Write-Host "HOW TO FIX:" -ForegroundColor Yellow
-        Write-Host "  Use option 4 (Change PAT) to update your Personal Access Token." -ForegroundColor Yellow
-        Write-Host "  You can generate a new PAT at:" -ForegroundColor Yellow
-        Write-Host "    https://sprintr.home.mendix.com/index.html  (Profile > Security > API Keys)" -ForegroundColor Yellow
-        Write-Host "      The user has access to the project and" -ForegroundColor Yellow
-        Write-Host "      at least enable mx:modelrepository:repo:read" -ForegroundColor Yellow
-        Write-Host ""
-        return
-    }
-    Write-Host "[OK]   PAT verified."
-    Write-Host ""
 
     # Resolve the remote default branch so v2 can be re-attached to a named branch
     # after checkout FETCH_HEAD (required for Studio Pro to allow commits after Finish Review).
@@ -596,8 +576,7 @@ function Invoke-FinishReview {
 
 function Invoke-ChangePAT {
     Write-Host "[PAT] Removing stored PAT credential..."
-    Remove-StoredCredential -Target $script:CredentialName -ErrorAction SilentlyContinue
-    Write-Host "[OK]  Old PAT removed (if one was stored)."
+    Remove-StoredPAT
     Write-Host ""
     Write-Host "[PAT] You will now be prompted to enter a new PAT."
     Get-StoredPAT -CredentialName $script:CredentialName | Out-Null
