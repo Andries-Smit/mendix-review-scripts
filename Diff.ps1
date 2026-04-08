@@ -3,9 +3,16 @@
 # Run this script from the review root (the folder containing v1, v2, diff).
 # ==============================================================================
 
-$ReviewRoot = (Get-Location).Path
+$ReviewRoot            = (Get-Location).Path
 $script:CredentialName = "MendixReview_PAT"
 $script:ScriptVersion  = "1.1"
+$script:LogFile        = Join-Path $ReviewRoot "review.log"
+
+function Write-Log {
+    param([string]$Message)
+    $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    try { Add-Content -Path $script:LogFile -Value ($ts + '  ' + $Message) -Encoding UTF8 } catch {}
+}
 
 # -- Dot-source StorePat.ps1 ---------------------------------------------------
 $storePatScript = Join-Path $PSScriptRoot "StorePat.ps1"
@@ -53,8 +60,11 @@ function Invoke-GitWithPAT {
     $prev = $env:GIT_ASKPASS
     $env:GIT_ASKPASS = $cmdPath
     try {
-        git -c credential.username=pat @GitArgs
-        return $LASTEXITCODE
+        $gitOutput = git -c credential.username=pat @GitArgs 2>&1
+        foreach ($line in $gitOutput) { Write-Log "  git: $line" }
+        # Return the output lines; callers that need the exit code check $LASTEXITCODE directly.
+        # $LASTEXITCODE is set by git above and persists after this function returns.
+        return $gitOutput
     } finally {
         $env:GIT_ASKPASS = $prev
         $env:MENDIX_REVIEW_PAT = $null
@@ -64,13 +74,13 @@ function Invoke-GitWithPAT {
 
 function Exit-Script {
     param([int]$Code = 0)
-    try { Stop-Transcript | Out-Null } catch { }
     exit $Code
 }
 
 function Open-StudioPro {
     $mprFile = @(Get-ChildItem -Path "$ReviewRoot\diff" -Filter "*.mpr" -File)
     if ($mprFile.Count -ne 1) {
+        Write-Log "ERROR: .mpr file not found in diff\ (found $($mprFile.Count))"
         Write-Host ""
         Write-Host "ERROR: Could not find a .mpr file in the diff\ folder." -ForegroundColor Red
         Write-Host ""
@@ -82,10 +92,10 @@ function Open-StudioPro {
     }
 
     $mprPath = $mprFile[0].FullName
-    Write-Host "[OPEN] Opening: $mprPath"
+    Write-Log "[OPEN] Opening: $mprPath"
     # Open via file association — Windows selects the correct Studio Pro version automatically.
     Start-Process -FilePath $mprPath
-    Write-Host "[OK]   Studio Pro is starting."
+    Write-Host "  Mendix Studio Pro is opening." -ForegroundColor Green
     return $true
 }
 
@@ -111,6 +121,7 @@ function Remove-DiffGit {
         try {
             Remove-Item -Recurse -Force $gitPath -ErrorAction Stop
         } catch {
+            Write-Log "ERROR: Could not remove diff\.git - $($_.Exception.Message)"
             Write-Host ""
             Write-Host "ERROR: Could not remove diff\.git" -ForegroundColor Red
             Write-Host "       $($_.Exception.Message)" -ForegroundColor Red
@@ -131,6 +142,7 @@ function Copy-GitInto {
     # Guard: if DestGit already exists, Copy-Item would create a double-nested .git\.git.
     # Remove-DiffGit must always be called before this function.
     if (Test-Path $DestGit) {
+        Write-Log "ERROR: DestGit already exists: $DestGit"
         Write-Host ""
         Write-Host "ERROR: Destination .git already exists and was not removed before Copy-GitInto." -ForegroundColor Red
         Write-Host "       Destination: $DestGit" -ForegroundColor Red
@@ -144,6 +156,7 @@ function Copy-GitInto {
 
     robocopy $SourceGit $DestGit /E /NP /NDL /NFL | Out-Null
     if ($LASTEXITCODE -ge 8) {
+        Write-Log "ERROR: robocopy .git copy failed (exit $LASTEXITCODE) from $SourceGit"
         Write-Host ""
         Write-Host "ERROR: Could not copy .git folder." -ForegroundColor Red
         Write-Host "       From: $SourceGit" -ForegroundColor Red
@@ -217,11 +230,13 @@ Write-Host "================================================================" -F
 Write-Host "    Mendix Code Review Tool  (v$($script:ScriptVersion))" -ForegroundColor Cyan
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host "    Review root: $ReviewRoot"
+Write-Host "    Log:         $($script:LogFile)" -ForegroundColor DarkGray
 Write-Host ""
 
 # -- Verify git is available ---------------------------------------------------
 $gitVersion = git --version 2>&1
 if ($LASTEXITCODE -ne 0) {
+    Write-Log "ERROR: git was not found on PATH"
     Write-Host ""
     Write-Host "ERROR: git was not found on your PATH." -ForegroundColor Red
     Write-Host ""
@@ -232,16 +247,7 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# -- Start transcript logging --------------------------------------------------
-$transcriptPath = Join-Path $ReviewRoot "review.log"
-try {
-    Start-Transcript -Path $transcriptPath -Append | Out-Null
-    Write-Host "[LOG]  Session transcript: $transcriptPath"
-    Write-Host ""
-} catch {
-    Write-Host "[WARN] Could not start transcript: $($_.Exception.Message)" -ForegroundColor Yellow
-    Write-Host ""
-}
+Write-Log "=== Session started (git: $gitVersion) ==="
 
 
 function Show-WorkspaceState {
@@ -350,6 +356,7 @@ function Invoke-StartReview {
 
     $originUrl = (git -C "$ReviewRoot\v1" remote get-url origin 2>&1).Trim()
     if ($LASTEXITCODE -ne 0 -or -not $originUrl) {
+        Write-Log "ERROR: Could not read origin URL from v1\"
         Write-Host ""
         Write-Host "ERROR: Could not read the git remote origin URL from v1\." -ForegroundColor Red
         Write-Host "       v1\ must be a git repository with a remote named 'origin'." -ForegroundColor Red
@@ -359,36 +366,38 @@ function Invoke-StartReview {
         Write-Host ""
         return
     }
+    Write-Log "Origin URL: $originUrl"
 
     # Resolve the remote default branch so v2 can be re-attached to a named branch
     # after checkout FETCH_HEAD (required for Studio Pro to allow commits after Finish Review).
     $defaultBranch = "main"   # fallback
-    $symrefOutput = Invoke-GitWithPAT -GitArgs @("ls-remote", "--symref", $originUrl, "HEAD") -PAT $PAT 2>&1
-    if ($LASTEXITCODE -eq 0 -and $symrefOutput) {
-        $symrefLine = ($symrefOutput -split "`n" | Where-Object { $_ -match "^ref: refs/heads/" } | Select-Object -First 1)
-        if ($symrefLine -match "^ref: refs/heads/([^\t]+)") {
+    $symrefLines = Invoke-GitWithPAT -GitArgs @("ls-remote", "--symref", $originUrl, "HEAD") -PAT $PAT
+    if ($LASTEXITCODE -eq 0 -and $symrefLines) {
+        $symrefLine = ($symrefLines | Where-Object { $_ -match "^ref: refs/heads/" } | Select-Object -First 1)
+        if ($symrefLine -match "^ref: refs/heads/(\S+)") {
             $defaultBranch = $Matches[1].Trim()
-            Write-Host "[INFO] Default branch resolved: $defaultBranch"
+            Write-Log "[INFO] Default branch resolved: $defaultBranch"
         } else {
             Write-Host "[WARN] Could not parse branch from ls-remote output. Falling back to 'main'." -ForegroundColor Yellow
+            Write-Log "[WARN] Could not parse branch from ls-remote output"
         }
     } else {
         Write-Host "[WARN] ls-remote --symref failed. Falling back to default branch 'main'." -ForegroundColor Yellow
+        Write-Log "[WARN] ls-remote --symref failed"
     }
-    Write-Host ""
 
     # Step 3: Refresh recent history in v1\ so SelectCommits can show up-to-date commits.
     # After a previous review, v1\ is a shallow clone at a single commit. Fetching here
     # gives git log enough history to populate the selector.
-    Write-Host "[FETCH] Refreshing commit history in v1\ ..."
+    Write-Host "  Fetching commit history..." -NoNewline
     Invoke-GitWithPAT -GitArgs @("-C", "$ReviewRoot\v1", "fetch", "--depth", "50", $originUrl) -PAT $PAT | Out-Null
-    git -C "$ReviewRoot\v1" checkout FETCH_HEAD --quiet 2>$null
-    Write-Host "[OK]   History refreshed."
-    Write-Host ""
+    $out = git -C "$ReviewRoot\v1" checkout FETCH_HEAD --quiet 2>&1; Write-Log "git checkout v1 FETCH_HEAD: $($out -join ' ')"
+    Write-Host " done."
 
     # Step 3b: Select commit range
     $selectScript = Join-Path $PSScriptRoot "SelectCommits.ps1"
     if (-not (Test-Path $selectScript)) {
+        Write-Log "ERROR: SelectCommits.ps1 not found at $selectScript"
         Write-Host ""
         Write-Host "ERROR: SelectCommits.ps1 was not found next to Diff.ps1." -ForegroundColor Red
         Write-Host "       Expected at: $selectScript" -ForegroundColor Red
@@ -407,6 +416,7 @@ function Invoke-StartReview {
         return
     }
     if (-not (Test-Path $commitsFile)) {
+        Write-Log "ERROR: SelectCommits.ps1 did not produce $commitsFile"
         Write-Host ""
         Write-Host "ERROR: SelectCommits.ps1 did not produce an output file." -ForegroundColor Red
         Write-Host "       Expected: $commitsFile" -ForegroundColor Red
@@ -419,21 +429,25 @@ function Invoke-StartReview {
     . $commitsFile
 
     if (-not $CommitA -or -not $CommitB) {
+        Write-Log "ERROR: Could not read CommitA or CommitB from $commitsFile"
         Write-Host ""
         Write-Host "ERROR: Could not read CommitA or CommitB from the selection output." -ForegroundColor Red
         Write-Host ""
         return
     }
 
-    Write-Host ""
-    Write-Host "[INFO] CommitA (base):  $CommitA"
-    Write-Host "[INFO] CommitB (tip):   $CommitB"
-    Write-Host ""
+    Write-Log "[INFO] CommitA (base): $CommitA"
+    Write-Log "[INFO] CommitB (tip):  $CommitB"
+    $shortA = (git -C "$ReviewRoot\v1" log -1 --pretty=format:"%h" $CommitA 2>$null).Trim()
+    $shortB = (git -C "$ReviewRoot\v1" log -1 --pretty=format:"%h" $CommitB 2>$null).Trim()
+    if (-not $shortA) { $shortA = $CommitA.Substring(0,7) }
+    if (-not $shortB) { $shortB = $CommitB.Substring(0,7) }
 
     # Step 4: Update v1\ to CommitA
-    Write-Host "[FETCH] Fetching CommitA into v1\ ..."
-    Invoke-GitWithPAT -GitArgs @("-C", "$ReviewRoot\v1", "fetch", "--depth", "1", $originUrl, $CommitA) -PAT $PAT
+    Write-Host "  Fetching $shortA (base)..." -NoNewline
+    Invoke-GitWithPAT -GitArgs @("-C", "$ReviewRoot\v1", "fetch", "--depth", "1", $originUrl, $CommitA) -PAT $PAT | Out-Null
     if ($LASTEXITCODE -ne 0) {
+        Write-Log "ERROR: git fetch CommitA failed"
         Write-Host ""
         Write-Host "ERROR: git fetch failed for CommitA in v1\." -ForegroundColor Red
         Write-Host "       Commit: $CommitA" -ForegroundColor Red
@@ -444,19 +458,22 @@ function Invoke-StartReview {
         Write-Host ""
         return
     }
-    git -C "$ReviewRoot\v1" checkout FETCH_HEAD --quiet
+    $out = git -C "$ReviewRoot\v1" checkout FETCH_HEAD --quiet 2>&1; Write-Log "git checkout v1 CommitA: $($out -join ' ')"
     if ($LASTEXITCODE -ne 0) {
+        Write-Log "ERROR: git checkout FETCH_HEAD failed in v1\"
         Write-Host ""
         Write-Host "ERROR: git checkout FETCH_HEAD failed in v1\." -ForegroundColor Red
         Write-Host ""
         return
     }
-    Write-Host "[OK]   v1\ is at CommitA."
+    Write-Log "[OK] v1\ is at CommitA ($shortA)"
+    Write-Host " done."
 
     # Step 5: Update v2\ to CommitB
-    Write-Host "[FETCH] Fetching CommitB into v2\ ..."
-    Invoke-GitWithPAT -GitArgs @("-C", "$ReviewRoot\v2", "fetch", "--depth", "1", $originUrl, $CommitB) -PAT $PAT
+    Write-Host "  Fetching $shortB (tip)..." -NoNewline
+    Invoke-GitWithPAT -GitArgs @("-C", "$ReviewRoot\v2", "fetch", "--depth", "1", $originUrl, $CommitB) -PAT $PAT | Out-Null
     if ($LASTEXITCODE -ne 0) {
+        Write-Log "ERROR: git fetch CommitB failed (v1\ is already at CommitA)"
         Write-Host ""
         Write-Host "ERROR: git fetch failed for CommitB in v2\." -ForegroundColor Red
         Write-Host "       Commit: $CommitB" -ForegroundColor Red
@@ -470,8 +487,9 @@ function Invoke-StartReview {
         Write-Host ""
         return
     }
-    git -C "$ReviewRoot\v2" checkout FETCH_HEAD --quiet
+    $out = git -C "$ReviewRoot\v2" checkout FETCH_HEAD --quiet 2>&1; Write-Log "git checkout v2 CommitB: $($out -join ' ')"
     if ($LASTEXITCODE -ne 0) {
+        Write-Log "ERROR: git checkout FETCH_HEAD failed in v2\"
         Write-Host ""
         Write-Host "ERROR: git checkout FETCH_HEAD failed in v2\." -ForegroundColor Red
         Write-Host ""
@@ -480,8 +498,9 @@ function Invoke-StartReview {
 
     # Re-attach v2 HEAD to a named branch. Without this, v2\.git has a detached HEAD
     # (raw SHA), which Invoke-FinishReview copies into diff\.git — blocking Studio Pro commits.
-    git -C "$ReviewRoot\v2" checkout -B $defaultBranch
+    $out = git -C "$ReviewRoot\v2" checkout -B $defaultBranch 2>&1; Write-Log "git checkout -B $defaultBranch in v2\: $($out -join ' ')"
     if ($LASTEXITCODE -ne 0) {
+        Write-Log "ERROR: Could not create branch $defaultBranch in v2\"
         Write-Host ""
         Write-Host "ERROR: Could not create branch '$defaultBranch' in v2\." -ForegroundColor Red
         Write-Host "       Studio Pro will not be able to commit after Finish Review." -ForegroundColor Red
@@ -491,14 +510,14 @@ function Invoke-StartReview {
         Write-Host ""
         return
     }
-    Write-Host "[INFO] v2\ HEAD attached to branch '$defaultBranch'."
-    Write-Host "[OK]   v2\ is at CommitB."
-    Write-Host ""
+    Write-Log "[OK] v2\ is at CommitB ($shortB), branch $defaultBranch"
+    Write-Host " done."
 
     # Step 6: Prepare diff\ folder
-    Write-Host "[DIFF] Syncing v2\ files into diff\ ..."
-    robocopy "$ReviewRoot\v2" "$ReviewRoot\diff" /E /IS /IT /PURGE /XD "deployment" ".git" ".mendix-cache" /NP /NDL /NFL
+    Write-Host "  Setting up diff workspace..." -NoNewline
+    robocopy "$ReviewRoot\v2" "$ReviewRoot\diff" /E /IS /IT /PURGE /XD "deployment" ".git" ".mendix-cache" /NP /NDL /NFL | Out-Null
     if ($LASTEXITCODE -ge 8) {
+        Write-Log "ERROR: robocopy failed (exit $LASTEXITCODE)"
         Write-Host ""
         Write-Host "ERROR: robocopy failed while syncing files into diff\." -ForegroundColor Red
         Write-Host "       robocopy exit code: $LASTEXITCODE" -ForegroundColor Red
@@ -508,12 +527,12 @@ function Invoke-StartReview {
         Write-Host ""
         return
     }
-    Write-Host "[OK]   Files synced."
+    Write-Log "[OK] Files synced from v2\ to diff\"
 
-    Write-Host "[DIFF] Preparing .git for review (v1 state as baseline)..."
     if (-not (Remove-DiffGit)) { return }
     if (-not (Copy-GitInto -SourceGit "$ReviewRoot\v1\.git" -DestGit "$ReviewRoot\diff\.git")) { return }
-    Write-Host "[OK]   diff\.git is ready."
+    Write-Log "[OK] diff\.git is ready"
+    Write-Host " done."
     Write-Host ""
 
     # Step 7: Open Studio Pro
@@ -535,11 +554,13 @@ function Invoke-ContinueReview {
         return
     }
 
-    Write-Host "[CONTINUE] Preparing diff\ for continued review..."
+    Write-Host "  Restoring diff workspace..." -NoNewline
+    Write-Log "[CONTINUE] Preparing diff\ for continued review"
 
     if (-not (Remove-DiffGit)) { return }
     if (-not (Copy-GitInto -SourceGit "$ReviewRoot\v1\.git" -DestGit "$ReviewRoot\diff\.git")) { return }
-    Write-Host "[OK]   diff\.git restored to v1 baseline."
+    Write-Log "[OK] diff\.git restored to v1 baseline"
+    Write-Host " done."
     Write-Host ""
 
     Open-StudioPro | Out-Null
@@ -548,23 +569,37 @@ function Invoke-ContinueReview {
 function Invoke-FinishReview {
     if (Test-DiffProjectOpen) { return }
 
-    Write-Host "[FINISH] Preparing diff\ for finish review..."
+    Write-Host "  Switching to final state..." -NoNewline
+    Write-Log "[FINISH] Preparing diff\ for finish review"
 
     if (-not (Remove-DiffGit)) { return }
     if (-not (Copy-GitInto -SourceGit "$ReviewRoot\v2\.git" -DestGit "$ReviewRoot\diff\.git")) { return }
-    Write-Host "[OK]   diff\.git set to v2 tip state."
+    Write-Log "[OK] diff\.git set to v2 tip state"
+    Write-Host " done."
     Write-Host ""
 
     Open-StudioPro | Out-Null
 }
 
 function Invoke-ChangePAT {
-    Write-Host "[PAT] Removing stored PAT credential..."
+    Write-Log "User requested PAT change"
     Remove-StoredPAT
     Write-Host ""
-    Write-Host "[PAT] You will now be prompted to enter a new PAT."
+    Write-Host "You will now be prompted to enter a new PAT."
     Get-StoredPAT -CredentialName $script:CredentialName | Out-Null
-    Write-Host "[OK]  New PAT saved."
+    Write-Log "[OK] New PAT saved"
+}
+
+function Invoke-OpenLog {
+    if (-not (Test-Path $script:LogFile)) {
+        Write-Host ""
+        Write-Host "  No log file found yet." -ForegroundColor Yellow
+        Write-Host "  Log will be created at: $($script:LogFile)" -ForegroundColor DarkGray
+        Write-Host ""
+        return
+    }
+    Write-Log "User opened log file"
+    Start-Process -FilePath $script:LogFile
 }
 
 function Show-Help {
@@ -594,7 +629,10 @@ function Show-Help {
     Write-Host "     Updates your stored Personal Access Token. Use this if your PAT has"
     Write-Host "     expired or been revoked, or if you see authentication errors."
     Write-Host ""
-    Write-Host "  5. Help"
+    Write-Host "  5. Open log file"
+    Write-Host "     Opens review.log in your default text editor."
+    Write-Host ""
+    Write-Host "  6. Help"
     Write-Host "     Shows this help text."
     Write-Host ""
     Write-Host "FOLDER STRUCTURE"
@@ -635,11 +673,12 @@ while ($true) {
     Write-Host "  2. Continue review"
     Write-Host "  3. Finish review"
     Write-Host "  4. Change PAT"
-    Write-Host "  5. Help"
+    Write-Host "  5. Open log file"
+    Write-Host "  6. Help"
     Write-Host "  Q. Quit"
     Write-Host ""
 
-    $choice = (Read-Host "Enter choice (1-5), or Q to quit").Trim()
+    $choice = (Read-Host "Enter choice (1-6), or Q to quit").Trim()
 
     Write-Host ""
 
@@ -648,9 +687,10 @@ while ($true) {
         "2" { Invoke-ContinueReview }
         "3" { Invoke-FinishReview }
         "4" { Invoke-ChangePAT }
-        "5" { Show-Help }
+        "5" { Invoke-OpenLog }
+        "6" { Show-Help }
         { $_ -eq "Q" -or $_ -eq "q" } { Write-Host "Goodbye."; Exit-Script 0 }
-        default { Write-Host "  Please enter a number between 1 and 5, or Q to quit." -ForegroundColor Yellow }
+        default { Write-Host "  Please enter a number between 1 and 6, or Q to quit." -ForegroundColor Yellow }
     }
 
     Write-Host ""

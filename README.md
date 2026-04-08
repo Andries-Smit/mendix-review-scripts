@@ -78,6 +78,7 @@ What would you like to do?
 | **2. Continue review** | You closed Studio Pro mid-review. Reopens the same workspace without changing the selected commits. |
 | **3. Finish review** | You are done reviewing. Swaps the workspace to the v2 baseline so you can see only your own fixes, then reopens Studio Pro to commit them. |
 | **4. Change PAT** | Your PAT has expired or authentication is failing. Replaces the stored token. |
+| **5. Open log file** | Opens the detailed log. |
 | **5. Help** | In-tool explanation of the folder structure and each option. |
 
 Enter `Q` at the menu to quit.
