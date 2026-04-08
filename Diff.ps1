@@ -172,10 +172,17 @@ function Copy-GitInto {
     return $true
 }
 
+function Invoke-Git {
+    param([string[]]$GitArgs)
+    return (git @GitArgs 2>&1)
+}
+
 
 # ==============================================================================
 # Startup validation
 # ==============================================================================
+
+if ($MyInvocation.InvocationName -ne '.') {
 
 # Must NOT be run from a project folder (no .mpr in current dir)
 $rootMpr = @(Get-ChildItem -Path . -Filter "*.mpr" -File)
@@ -249,6 +256,8 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Log "=== Session started (git: $gitVersion) ==="
 
+} # end startup validation guard
+
 
 function Show-WorkspaceState {
     Write-Host "----------------------------------------------------------------"
@@ -288,12 +297,12 @@ function Show-WorkspaceState {
         return
     }
 
-    $diffHead    = (git -C "$ReviewRoot\diff" rev-parse HEAD 2>&1).Trim()
-    $diffChanges = @(git -C "$ReviewRoot\diff" status --porcelain 2>&1 | Where-Object { $_ }).Count
+    $diffHead    = (Invoke-Git "-C", "$ReviewRoot\diff", "rev-parse", "HEAD").Trim()
+    $diffChanges = @(Invoke-Git "-C", "$ReviewRoot\diff", "status", "--porcelain" | Where-Object { $_ }).Count
 
     if ($diffHead -eq $CommitA) {
-        $v1Info = (git -C "$ReviewRoot\v1" log -1 --pretty=format:"%h  %ad  %s" --date=short HEAD 2>&1).Trim()
-        $v2Info = (git -C "$ReviewRoot\v2" log -1 --pretty=format:"%h  %ad  %s" --date=short HEAD 2>&1).Trim()
+        $v1Info = (Invoke-Git "-C", "$ReviewRoot\v1", "log", "-1", "--pretty=format:%h  %ad  %s", "--date=short", "HEAD").Trim()
+        $v2Info = (Invoke-Git "-C", "$ReviewRoot\v2", "log", "-1", "--pretty=format:%h  %ad  %s", "--date=short", "HEAD").Trim()
         Write-Host "  Workspace:  REVIEWING" -ForegroundColor Cyan
         Write-Host "  Base (A):   $v1Info"
         Write-Host "  Tip  (B):   $v2Info"
@@ -303,7 +312,7 @@ function Show-WorkspaceState {
             Write-Host "  Changes:    none yet"
         }
     } elseif ($diffHead -eq $CommitB) {
-        $v2Info = (git -C "$ReviewRoot\v2" log -1 --pretty=format:"%h  %ad  %s" --date=short HEAD 2>&1).Trim()
+        $v2Info = (Invoke-Git "-C", "$ReviewRoot\v2", "log", "-1", "--pretty=format:%h  %ad  %s", "--date=short", "HEAD").Trim()
         Write-Host "  Workspace:  FINISH REVIEW - commit your fixes in Studio Pro" -ForegroundColor Yellow
         Write-Host "  On commit:  $v2Info"
         if ($diffChanges -gt 0) {
@@ -666,6 +675,8 @@ function Show-Help {
 # Main menu loop
 # ==============================================================================
 
+if ($MyInvocation.InvocationName -ne '.') {
+
 while ($true) {
     Show-WorkspaceState
     Write-Host "What would you like to do?"
@@ -695,3 +706,5 @@ while ($true) {
 
     Write-Host ""
 }
+
+} # end main menu guard
