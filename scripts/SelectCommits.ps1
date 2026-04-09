@@ -1,13 +1,13 @@
 # ─────────────────────────────────────────────
 # SelectCommits.ps1
 # Interactively select a range of git commits
-# Outputs CommitA (base) and CommitB (tip) for use with MendixDiff.ps1
+# Outputs CommitA (base) and CommitB (tip) for use with Review.ps1
 # ─────────────────────────────────────────────
 
 param(
     [string]$RepoPath   = "",
     [int]   $Count      = 30,
-    [string]$OutputFile = ""   # Always pass this explicitly when calling from Diff.ps1
+    [string]$OutputFile = ""   # Always pass this explicitly when calling from Review.ps1
 )
 
 # ── Helper: truncate string ─────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 BeforeAll {
     Set-Location "C:\GitHub\mendix-review-scripts\TestReviewApp-main-review"
-    . "$PSScriptRoot\..\Diff.ps1"
+    . "$PSScriptRoot\..\scripts\Review.ps1"
 }
 
 Describe "Show-WorkspaceState filesystem checks" {

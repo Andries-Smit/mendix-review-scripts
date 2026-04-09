@@ -1,5 +1,5 @@
 BeforeAll {
-    . "$PSScriptRoot\..\SelectCommits.ps1"
+    . "$PSScriptRoot\..\scripts\SelectCommits.ps1"
 }
 
 Describe "Truncate" {

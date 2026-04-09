@@ -2,7 +2,7 @@ BeforeAll {
     . "$PSScriptRoot\helpers\New-ReviewFixture.ps1"
     $script:fixture = New-ReviewFixture
     Set-Location $script:fixture
-    . "$PSScriptRoot\..\Diff.ps1"
+    . "$PSScriptRoot\..\scripts\Review.ps1"
     Mock Open-StudioPro { return $true }
 }
 

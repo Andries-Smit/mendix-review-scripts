@@ -2,7 +2,7 @@
 
 ## Goal
 Automate the Mendix code review process currently described in `CodeReviewProcedure.md`.  
-Produces two PowerShell scripts: **`Setup.ps1`** and **`Diff.ps1`**.
+Produces two PowerShell scripts: **`Setup.ps1`** and **`Review.ps1`**.
 
 ---
 
@@ -24,7 +24,7 @@ Produces two PowerShell scripts: **`Setup.ps1`** and **`Diff.ps1`**.
   v1/                    ← full copy of source project checked out at CommitA (base)
   v2/                    ← full copy of source project checked out at CommitB (tip)
   diff/                  ← full copy of source project (v2 files + v1's .git for git diff)
-  Diff.ps1               ← copied here during Setup so reviewers only need this one file
+  Review.ps1               ← copied here during Setup so reviewers only need this one file
 ```
 
 ---
@@ -50,7 +50,7 @@ Produces two PowerShell scripts: **`Setup.ps1`** and **`Diff.ps1`**.
 
 4. **Guard: review root must not already exist**  
    - If the folder already exists: print an error saying setup has already been run,  
-     direct the user to run `Diff.ps1` instead, and exit.
+     direct the user to run `Review.ps1` instead, and exit.
 
 5. **Create folder structure**  
    Create `<ReviewRoot>\v1`, `<ReviewRoot>\v2`, `<ReviewRoot>\diff`.
@@ -60,15 +60,15 @@ Produces two PowerShell scripts: **`Setup.ps1`** and **`Diff.ps1`**.
    - Print progress as folders are copied (this can take several minutes).  
    - After each of the three copies completes, print a status line.
 
-7. **Copy `Diff.ps1` into the review root**  
-   Copy `Diff.ps1` from the same directory as `Setup.ps1` to `<ReviewRoot>\Diff.ps1`.
+7. **Copy `Review.ps1` into the review root**  
+   Copy `Review.ps1` from the same directory as `Setup.ps1` to `<ReviewRoot>\Review.ps1`.
 
 8. **Done message**  
-   Print the path to `<ReviewRoot>\Diff.ps1` and instruct the user to run it from the review root to start a review.
+   Print the path to `<ReviewRoot>\Review.ps1` and instruct the user to run it from the review root to start a review.
 
 ---
 
-## Script 2 — `Diff.ps1`
+## Script 2 — `Review.ps1`
 
 **Purpose:** Ongoing review management. Lives in `<ReviewRoot>` and is run from there.
 

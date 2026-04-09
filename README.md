@@ -22,9 +22,9 @@ Automates the diff-folder review process described in [CodeReviewProcedure.md](d
 
 1. **Copy the scripts into your Mendix project folder**
 
-   Copy these three files into the root of your Mendix project (next to the `.mpr` file):
+   Create a folder `scripts/` root of your Mendix project (next to the `.mpr` file), and add the following scripts:
    - `Setup.ps1`
-   - `Diff.ps1`
+   - `Review.ps1`
    - `StorePat.ps1`
    - `SelectCommits.ps1`
 
@@ -37,7 +37,7 @@ Automates the diff-folder review process described in [CodeReviewProcedure.md](d
 
    Open PowerShell, navigate to your project folder, and run:
    ```powershell
-   cd "C:\Projects\MyMendixApp"
+   cd "C:\Projects\MyMendixApp\scripts"
    .\Setup.ps1
    ```
 
@@ -48,20 +48,20 @@ Automates the diff-folder review process described in [CodeReviewProcedure.md](d
 
    > This copy can take several minutes for large projects.
 
-4. **Navigate to the review root and run Diff.ps1**
+4. **Navigate to the review root and run Review.ps1**
 
    ```powershell
    cd "C:\Projects\MyMendixApp-review"
-   .\Diff.ps1
+   .\Review.ps1
    ```
 
-Setup only needs to be done once per project. After that, always run `Diff.ps1` from the review root.
+Setup only needs to be done once per project. After that, always run `Review.ps1` from the review root.
 
 ---
 
-## Using Diff.ps1
+## Using Review.ps1
 
-Run `Diff.ps1` from the review root. It shows a menu:
+Run `Review.ps1` from the review root. It shows a menu:
 
 ```
 What would you like to do?
@@ -121,3 +121,11 @@ This tool fills a gap: ideally Mendix Studio Pro would have native support for r
 See [CodeReviewProcedure.md](docs/CodeReviewProcedure.md) for the full explanation.
 
 In short: the `diff\` folder contains the **new files** (CommitB) but the **old git history** (CommitA). Studio Pro sees the gap between them and presents every change as a local modification — giving you a clean visual diff of everything that changed across your selected commits.
+
+## Development
+
+### Tests
+
+```
+ Invoke-Pester ./tests     
+```

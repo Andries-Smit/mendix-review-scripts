@@ -20,7 +20,7 @@ Write-Host "  v2\    -- the project checked out at CommitB (tip/after state)"
 Write-Host "  diff\  -- the diff workspace opened in Studio Pro for review"
 Write-Host ""
 Write-Host "This setup script runs ONCE to create the workspace."
-Write-Host "Afterwards, use Diff.ps1 in the review root to manage reviews."
+Write-Host "Afterwards, use Review.ps1 in the review root to manage reviews."
 Write-Host ""
 
 # -- Step 1b: Verify git is available ------------------------------------------
@@ -39,24 +39,24 @@ Write-Host "[OK] git found: $gitVersion"
 Write-Host ""
 
 # -- Step 2: Validate source folder --------------------------------------------
-$mprFiles = @(Get-ChildItem -Path . -Filter "*.mpr" -File)
+$sourcePath = (Resolve-Path "$PSScriptRoot\..").Path
+$mprFiles = @(Get-ChildItem -Path $sourcePath -Filter "*.mpr" -File)
 
 if ($mprFiles.Count -ne 1) {
     Write-Host ""
-    Write-Host "ERROR: This script must be run from a Mendix project folder." -ForegroundColor Red
-    Write-Host "       Expected exactly 1 .mpr file in the current directory." -ForegroundColor Red
+    Write-Host "ERROR: No Mendix project found in the scripts parent folder." -ForegroundColor Red
+    Write-Host "       Expected exactly 1 .mpr file in: $sourcePath" -ForegroundColor Red
     Write-Host "       Found: $($mprFiles.Count)" -ForegroundColor Red
     Write-Host ""
     Write-Host "HOW TO FIX:" -ForegroundColor Yellow
-    Write-Host "  Navigate to your Mendix project folder and run Setup.ps1 from there." -ForegroundColor Yellow
-    Write-Host "  Example:" -ForegroundColor Yellow
-    Write-Host "    cd C:\Projects\MyMendixApp" -ForegroundColor Yellow
-    Write-Host "    .\Setup.ps1" -ForegroundColor Yellow
+    Write-Host "  Place the scripts folder inside your Mendix project folder (next to the .mpr file)." -ForegroundColor Yellow
+    Write-Host "  Example structure:" -ForegroundColor Yellow
+    Write-Host "    C:\Projects\MyMendixApp\" -ForegroundColor Yellow
+    Write-Host "      MyMendixApp.mpr" -ForegroundColor Yellow
+    Write-Host "      scripts\Setup.ps1" -ForegroundColor Yellow
     Write-Host ""
     exit 1
 }
-
-$sourcePath = (Get-Location).Path
 Write-Host "[OK] Mendix project found: $($mprFiles[0].Name)"
 Write-Host "     Source folder: $sourcePath"
 Write-Host ""
@@ -100,7 +100,7 @@ $sourceLeaf   = Split-Path $sourcePath -Leaf
 $sourceParent = Split-Path $sourcePath -Parent
 $defaultReviewRoot = Join-Path $sourceParent "$sourceLeaf-review"
 
-Write-Host "Review root path (the folder that will contain v1, v2, diff and Diff.ps1):"
+Write-Host "Review root path (the folder that will contain v1, v2, diff and Review.ps1):"
 Write-Host "  Default: $defaultReviewRoot"
 Write-Host ""
 $userInput = Read-Host "Press Enter to accept the default, or type a custom path"
@@ -126,9 +126,9 @@ if (Test-Path $ReviewRoot) {
     Write-Host ""
     Write-Host "HOW TO FIX:" -ForegroundColor Yellow
     Write-Host "  Setup has already been run for this project." -ForegroundColor Yellow
-    Write-Host "  To start or continue a review, run Diff.ps1 from the review root:" -ForegroundColor Yellow
+    Write-Host "  To start or continue a review, run Review.ps1 from the review root:" -ForegroundColor Yellow
     Write-Host "    cd `"$ReviewRoot`"" -ForegroundColor Yellow
-    Write-Host "    .\Diff.ps1" -ForegroundColor Yellow
+    Write-Host "    .\Review.ps1" -ForegroundColor Yellow
     Write-Host "" -ForegroundColor Yellow
     Write-Host "  If you want to start fresh, delete the review root first:" -ForegroundColor Yellow
     Write-Host "    Remove-Item -Recurse -Force `"$ReviewRoot`"" -ForegroundColor Yellow
@@ -174,7 +174,7 @@ foreach ($dest in @("v1", "v2", "diff")) {
 }
 
 # -- Step 6: Copy scripts into the review root ---------------------------------
-foreach ($scriptName in @("Diff.ps1", "StorePat.ps1", "SelectCommits.ps1")) {
+foreach ($scriptName in @("Review.ps1", "StorePat.ps1", "SelectCommits.ps1")) {
     $scriptSrc = Join-Path $PSScriptRoot $scriptName
     if (Test-Path $scriptSrc) {
         try {
@@ -209,7 +209,7 @@ Write-Host "================================================================" -F
 Write-Host ""
 Write-Host "Review root: $ReviewRoot"
 Write-Host ""
-Write-Host "Next step -- run Diff.ps1 to start a review:"
+Write-Host "Next step -- run Review.ps1 to start a review:"
 Write-Host "  cd `"$ReviewRoot`""
-Write-Host "  .\Diff.ps1"
+Write-Host "  .\Review.ps1"
 Write-Host ""

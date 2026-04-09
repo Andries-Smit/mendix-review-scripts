@@ -1,5 +1,5 @@
 # StorePat.ps1 — PAT storage via DPAPI (no external module required)
-# Dot-sourced by Diff.ps1. Exposes Get-StoredPAT and Remove-StoredPAT.
+# Dot-sourced by Review.ps1. Exposes Get-StoredPAT and Remove-StoredPAT.
 
 Add-Type -AssemblyName System.Security   # Required for ProtectedData
 

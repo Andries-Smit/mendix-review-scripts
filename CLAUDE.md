@@ -10,10 +10,10 @@ A set of PowerShell scripts that automate the Mendix visual code review process.
 
 | Script | Purpose | Run from |
 |--------|---------|----------|
-| `Setup.ps1` | One-time workspace initialisation | Inside the Mendix project folder (next to `.mpr`) |
-| `Diff.ps1` | Ongoing review management (main entry point) | Review root (`<project>-review/`) |
-| `StorePat.ps1` | PAT storage helper — dot-sourced by `Diff.ps1` | Not run directly |
-| `SelectCommits.ps1` | Interactive TUI for selecting a commit range — dot-sourced by `Diff.ps1` | Can run standalone |
+| `scripts/Setup.ps1` | One-time workspace initialisation | Inside the Mendix project folder (next to `.mpr`) |
+| `scripts/Review.ps1` | Ongoing review management (main entry point) | Review root (`<project>-review/`) — copied to root by Setup |
+| `scripts/StorePat.ps1` | PAT storage helper — dot-sourced by `Review.ps1` | Not run directly — copied to root by Setup |
+| `scripts/SelectCommits.ps1` | Interactive TUI for selecting a commit range — dot-sourced by `Review.ps1` | Can run standalone — copied to root by Setup |
 
 ## How the diff trick works
 
@@ -45,7 +45,7 @@ exit 1
 
 **Studio Pro launch**: Opened via `Start-Process -FilePath <path-to-.mpr>` (Windows file association), not by looking up `studiopro.exe`. This automatically uses the correct installed version.
 
-**SelectCommits.ps1 output**: Writes a dot-sourceable `commits.selected.ps1` file that sets `$CommitA` and `$CommitB`. `Diff.ps1` dot-sources this file to read the selected commits.
+**SelectCommits.ps1 output**: Writes a dot-sourceable `commits.selected.ps1` file that sets `$CommitA` and `$CommitB`. `Review.ps1` dot-sources this file to read the selected commits.
 
 ## Testing
 
@@ -53,27 +53,27 @@ A test Mendix project is checked in for local testing without needing a real pro
 
 | Path | Purpose |
 |------|---------|
-| `TestReviewApp-main/` | Source Mendix project (contains `TestReviewApp.mpr`) — run `Setup.ps1` from here |
-| `TestReviewApp-main-review/` | Pre-created review workspace — run `Diff.ps1` from here |
+| `TestReviewApp-main/` | Source Mendix project (contains `TestReviewApp.mpr`) — run `scripts/Setup.ps1` from here |
+| `TestReviewApp-main-review/` | Pre-created review workspace — run `Review.ps1` from here |
 
-To test `Diff.ps1` changes:
+To test `Review.ps1` changes:
 ```powershell
 cd C:\GitHub\mendix-review-scripts\TestReviewApp-main-review
-.\Diff.ps1
+.\Review.ps1
 ```
 
-To test `Setup.ps1` changes, always run the **source** script from the test project directory (not the stale copy inside `TestReviewApp-main/`). Delete the existing review root first:
+To test `Setup.ps1` changes, sync the source script into the test project first, then run it. Delete the existing review root first:
 ```powershell
 Remove-Item -Recurse -Force C:\GitHub\mendix-review-scripts\TestReviewApp-main-review
-cd C:\GitHub\mendix-review-scripts\TestReviewApp-main
-& "C:\GitHub\mendix-review-scripts\Setup.ps1"
+Copy-Item C:\GitHub\mendix-review-scripts\scripts\Setup.ps1 C:\GitHub\mendix-review-scripts\TestReviewApp-main\scripts\Setup.ps1
+& "C:\GitHub\mendix-review-scripts\TestReviewApp-main\scripts\Setup.ps1"
 ```
 
-Note: `TestReviewApp-main/` contains a live `.mpr.lock` file (Studio Pro may have it open). The `TestReviewApp-main-review/` workspace has `commits.selected.ps1` and `v1/`, `v2/`, `diff/` already populated.
+Note: `Setup.ps1` determines the project root from its own location (`$PSScriptRoot\..`), so it must be run from inside the Mendix project's `scripts\` folder — not from the repo root.
+
+`TestReviewApp-main/` contains a live `.mpr.lock` file (Studio Pro may have it open). The `TestReviewApp-main-review/` workspace has `commits.selected.ps1` and `v1/`, `v2/`, `diff/` already populated.
 
 `TestReviewApp-main-review/` is **not** a permanent fixture — it can be deleted when testing `Setup.ps1`. It is not in `.gitignore` so it may or may not be present. Always check before assuming the review workspace exists.
-
-The `Setup.ps1` copy inside `TestReviewApp-main/` may be stale — always run the source version at the repo root when testing.
 
 ## Workflow sequence (Start Review)
 

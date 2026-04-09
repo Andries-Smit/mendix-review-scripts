@@ -1,5 +1,5 @@
 # ==============================================================================
-# Diff.ps1 -- Mendix Code Review Tool -- Review management
+# Review.ps1 -- Mendix Code Review Tool -- Review management
 # Run this script from the review root (the folder containing v1, v2, diff).
 # ==============================================================================
 
@@ -18,7 +18,7 @@ function Write-Log {
 $storePatScript = Join-Path $PSScriptRoot "StorePat.ps1"
 if (-not (Test-Path $storePatScript)) {
     Write-Host ""
-    Write-Host "ERROR: StorePat.ps1 was not found next to Diff.ps1." -ForegroundColor Red
+    Write-Host "ERROR: StorePat.ps1 was not found next to Review.ps1." -ForegroundColor Red
     Write-Host "       Expected at: $storePatScript" -ForegroundColor Red
     Write-Host ""
     Write-Host "HOW TO FIX:" -ForegroundColor Yellow
@@ -188,15 +188,15 @@ if ($MyInvocation.InvocationName -ne '.') {
 $rootMpr = @(Get-ChildItem -Path . -Filter "*.mpr" -File)
 if ($rootMpr.Count -gt 0) {
     Write-Host ""
-    Write-Host "ERROR: Diff.ps1 must be run from the review root, not a Mendix project folder." -ForegroundColor Red
+    Write-Host "ERROR: Review.ps1 must be run from the review root, not a Mendix project folder." -ForegroundColor Red
     Write-Host "       Found .mpr file(s) in the current directory." -ForegroundColor Red
     Write-Host ""
     Write-Host "HOW TO FIX:" -ForegroundColor Yellow
-    Write-Host "  Navigate to your review root folder and run Diff.ps1 from there." -ForegroundColor Yellow
+    Write-Host "  Navigate to your review root folder and run Review.ps1 from there." -ForegroundColor Yellow
     Write-Host "  The review root is the folder that contains v1\, v2\, and diff\ subfolders." -ForegroundColor Yellow
     Write-Host "  Example:" -ForegroundColor Yellow
     Write-Host "    cd `"C:\Projects\MyApp-review`"" -ForegroundColor Yellow
-    Write-Host "    .\Diff.ps1" -ForegroundColor Yellow
+    Write-Host "    .\Review.ps1" -ForegroundColor Yellow
     Write-Host ""
     exit 1
 }
@@ -249,7 +249,7 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "HOW TO FIX:" -ForegroundColor Yellow
     Write-Host "  Install Git for Windows from https://git-scm.com/download/win" -ForegroundColor Yellow
-    Write-Host "  After installation, close and reopen this PowerShell window, then re-run Diff.ps1." -ForegroundColor Yellow
+    Write-Host "  After installation, close and reopen this PowerShell window, then re-run Review.ps1." -ForegroundColor Yellow
     Write-Host ""
     exit 1
 }
@@ -408,7 +408,7 @@ function Invoke-StartReview {
     if (-not (Test-Path $selectScript)) {
         Write-Log "ERROR: SelectCommits.ps1 not found at $selectScript"
         Write-Host ""
-        Write-Host "ERROR: SelectCommits.ps1 was not found next to Diff.ps1." -ForegroundColor Red
+        Write-Host "ERROR: SelectCommits.ps1 was not found next to Review.ps1." -ForegroundColor Red
         Write-Host "       Expected at: $selectScript" -ForegroundColor Red
         Write-Host ""
         Write-Host "HOW TO FIX:" -ForegroundColor Yellow
