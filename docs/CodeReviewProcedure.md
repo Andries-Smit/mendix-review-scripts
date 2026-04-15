@@ -19,7 +19,7 @@ Say you want to review commits **RC2** and **RC3**, and your project is already 
 
 The `diff` folder is where the review happens. It contains the files from **RC3** — the end result of all the changes — but its `.git` history folder is replaced with the one from **C1**. From git's perspective, the project is still at **C1**. But the actual files on disk already reflect **RC3**. Studio Pro sees that gap and surfaces every difference as a local modification, giving you a clean, visual review of everything that changed across your commit range.
 
-![setup](./resources/review_setup.png)
+![setup](../resources/review_setup.png)
 
 * * *
 
@@ -141,7 +141,7 @@ Work through the changes and apply any corrections directly in Studio Pro, chang
 
 Before we can commit the review changes as a fix, we need to make sure we commit it at the right place in history.
 
-![review](./resources/review_review.png)
+![review](../resources/review_review.png)
 
 ### Step 9 — Swap the `.git` folder back
 
