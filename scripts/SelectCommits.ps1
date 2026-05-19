@@ -26,11 +26,15 @@ function Draw-CommitList {
         [array] $Commits,
         [int]   $StartRow,
         [int]   $ViewOffset,
-        [int]   $ViewportSize
+        [int]   $ViewportSize,
+        [string]$BranchName = ""
     )
 
     $li = 0   # line index — incremented after each Write-Host
     $w  = [Console]::WindowWidth - 1
+
+    [Console]::SetCursorPosition(0, $StartRow + $li++); Write-Host "  Branch: $BranchName".PadRight($w) -ForegroundColor Cyan
+    [Console]::SetCursorPosition(0, $StartRow + $li++); Write-Host "".PadRight($w)
 
     $header  = "   #      Hash      Date        Author              Subject"
     $divider = "   ---    --------  ----------  ------------------  " + ("-" * 38)
@@ -217,6 +221,9 @@ if ($MyInvocation.InvocationName -ne '.') {
     Write-Host "[OK] Loaded $($commits.Count) commits"
     Write-Host ""
 
+    $branchName = (git -C $RepoPath rev-parse --abbrev-ref HEAD 2>&1).Trim()
+    if (-not $branchName -or $branchName -eq "HEAD") { $branchName = "(detached)" }
+
     # ── Interactive selection loop ──────────────────────────────────────────────
     $cursorPos  = 0
     $rangeStart = -1
@@ -224,8 +231,8 @@ if ($MyInvocation.InvocationName -ne '.') {
     $phase      = 1
     $confirmed  = $false
 
-    # How many commit rows fit on screen (2 header + 1 scroll-indicator + 1 blank + 2 status + 1 margin = 7)
-    $viewportSize = [Math]::Max(5, [Console]::WindowHeight - 7)
+    # How many commit rows fit on screen (2 branch/blank + 2 header + 1 scroll-indicator + 1 blank + 2 status + 1 margin = 9)
+    $viewportSize = [Math]::Max(5, [Console]::WindowHeight - 9)
     $viewOffset   = 0   # index of first visible commit
 
     function Update-Viewport {
@@ -242,12 +249,12 @@ if ($MyInvocation.InvocationName -ne '.') {
 
     try {
         # Scroll the terminal to guarantee room for the TUI, then pin $startRow
-        $neededLines = $viewportSize + 6   # 2 header + viewport + 1 indicator + 1 blank + 2 status
+        $neededLines = $viewportSize + 8   # 2 branch/blank + 2 header + viewport + 1 indicator + 1 blank + 2 status
         Write-Host ("`n" * $neededLines) -NoNewline
         $startRow    = [Math]::Max(0, [Console]::CursorTop - $neededLines)
         [Console]::SetCursorPosition(0, $startRow)
 
-        $drawnLines = Draw-CommitList -CursorPos $cursorPos -RangeStart $rangeStart -RangeEnd $rangeEnd -Phase $phase -Commits $commits -StartRow $startRow -ViewOffset $viewOffset -ViewportSize $viewportSize
+        $drawnLines = Draw-CommitList -CursorPos $cursorPos -RangeStart $rangeStart -RangeEnd $rangeEnd -Phase $phase -Commits $commits -StartRow $startRow -ViewOffset $viewOffset -ViewportSize $viewportSize -BranchName $branchName
 
         while ($true) {
             $key = [Console]::ReadKey($true)
@@ -307,7 +314,7 @@ if ($MyInvocation.InvocationName -ne '.') {
 
             if ($confirmed) { break }
 
-            $drawnLines = Draw-CommitList -CursorPos $cursorPos -RangeStart $rangeStart -RangeEnd $rangeEnd -Phase $phase -Commits $commits -StartRow $startRow -ViewOffset $viewOffset -ViewportSize $viewportSize
+            $drawnLines = Draw-CommitList -CursorPos $cursorPos -RangeStart $rangeStart -RangeEnd $rangeEnd -Phase $phase -Commits $commits -StartRow $startRow -ViewOffset $viewOffset -ViewportSize $viewportSize -BranchName $branchName
         }
     }
     finally {

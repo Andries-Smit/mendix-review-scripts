@@ -3,7 +3,7 @@
 # Run this script from inside your Mendix source project folder.
 # ==============================================================================
 
-$script:ScriptVersion = "0.1.1"
+$script:ScriptVersion = "0.2.0"
 
 # -- Step 1: Welcome message ---------------------------------------------------
 Write-Host ""

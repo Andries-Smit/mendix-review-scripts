@@ -5,7 +5,7 @@
 
 $ReviewRoot            = (Get-Location).Path
 $script:CredentialName = "MendixReview_PAT"
-$script:ScriptVersion  = "0.1.1"
+$script:ScriptVersion  = "0.2.0"
 $script:LogFile        = Join-Path $ReviewRoot "review.log"
 
 function Write-Log {
@@ -271,6 +271,10 @@ function Show-WorkspaceState {
         Write-Host ""
         return
     }
+
+    $currentBranch = (Invoke-Git "-C", "$ReviewRoot\v2", "rev-parse", "--abbrev-ref", "HEAD").Trim()
+    if (-not $currentBranch -or $currentBranch -eq "HEAD") { $currentBranch = "(detached)" }
+    Write-Host "  Branch:     $currentBranch" -ForegroundColor Cyan
 
     $commitsFile = Join-Path $ReviewRoot "commits.selected.ps1"
 
@@ -590,6 +594,258 @@ function Invoke-FinishReview {
     Open-StudioPro | Out-Null
 }
 
+function Invoke-SwitchBranch {
+
+    if (Test-DiffProjectOpen) { return }
+
+    # Check for uncommitted changes in diff\
+    if (Test-Path "$ReviewRoot\diff\.git") {
+        $gitStatus = git -C "$ReviewRoot\diff" status --porcelain 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[WARN] Could not check git status in diff\ (exit code $LASTEXITCODE). Proceeding anyway." -ForegroundColor Yellow
+        } elseif ($gitStatus) {
+            Write-Host ""
+            Write-Host "WARNING: There are uncommitted changes in the diff\ folder." -ForegroundColor Yellow
+            Write-Host "         Starting a new review will overwrite them permanently." -ForegroundColor Yellow
+            Write-Host ""
+            Write-Host "  To preserve them: use option 4 (Finish Review) first." -ForegroundColor Yellow
+            Write-Host ""
+            $confirm = (Read-Host "Proceed and discard uncommitted changes? [y/N]").Trim()
+            if ($confirm -ne "y" -and $confirm -ne "Y") {
+                Write-Host "[INFO] Cancelled. Returning to menu." -ForegroundColor Yellow
+                return
+            }
+            Write-Host "[INFO] Proceeding. Uncommitted changes in diff\ will be overwritten."
+            Write-Host ""
+        }
+    }
+
+    $PAT = Get-StoredPAT -CredentialName $script:CredentialName
+
+    $originUrl = (git -C "$ReviewRoot\v1" remote get-url origin 2>&1).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $originUrl) {
+        Write-Log "ERROR: Could not read origin URL from v1\"
+        Write-Host ""
+        Write-Host "ERROR: Could not read the git remote origin URL from v1\." -ForegroundColor Red
+        Write-Host "       v1\ must be a git repository with a remote named 'origin'." -ForegroundColor Red
+        Write-Host ""
+        Write-Host "HOW TO FIX:" -ForegroundColor Yellow
+        Write-Host "  Delete the review root and re-run Setup.ps1 from your Mendix project folder." -ForegroundColor Yellow
+        Write-Host ""
+        return
+    }
+
+    # Fetch branch list from remote
+    Write-Host "  Fetching branch list..." -NoNewline
+    $lsOutput = Invoke-GitWithPAT -GitArgs @("ls-remote", "--heads", $originUrl) -PAT $PAT
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host ""
+        Write-Host "ERROR: Could not fetch branch list from remote." -ForegroundColor Red
+        Write-Host ""
+        Write-Host "HOW TO FIX:" -ForegroundColor Yellow
+        Write-Host "  Check your network connection and PAT (use option 5 to update PAT)." -ForegroundColor Yellow
+        Write-Host ""
+        return
+    }
+
+    $branches = @($lsOutput |
+        Where-Object { $_ -match "refs/heads/(.+)$" } |
+        ForEach-Object { $Matches[1].Trim() } |
+        Sort-Object)
+
+    if ($branches.Count -eq 0) {
+        Write-Host ""
+        Write-Host "ERROR: No branches found on the remote." -ForegroundColor Red
+        Write-Host ""
+        return
+    }
+    Write-Host " done."
+    Write-Host ""
+
+    # Display numbered branch list
+    Write-Host "  Available branches:"
+    Write-Host ""
+    for ($i = 0; $i -lt $branches.Count; $i++) {
+        Write-Host ("    {0,3}.  {1}" -f ($i + 1), $branches[$i])
+    }
+    Write-Host ""
+
+    $branchInput = (Read-Host "Enter branch number (1-$($branches.Count)), or Q to cancel").Trim()
+    if ($branchInput -eq "Q" -or $branchInput -eq "q") {
+        Write-Host "[INFO] Cancelled. Returning to menu." -ForegroundColor Yellow
+        return
+    }
+
+    $branchIndex = $null
+    if (-not [int]::TryParse($branchInput, [ref]$branchIndex) -or $branchIndex -lt 1 -or $branchIndex -gt $branches.Count) {
+        Write-Host ""
+        Write-Host "ERROR: Invalid selection. Please enter a number between 1 and $($branches.Count)." -ForegroundColor Red
+        Write-Host ""
+        return
+    }
+
+    $selectedBranch = $branches[$branchIndex - 1]
+    Write-Log "[INFO] Selected branch: $selectedBranch"
+    Write-Host ""
+    Write-Host "  Branch: $selectedBranch"
+    Write-Host ""
+
+    # Fetch recent commits from the selected branch into v1\
+    Write-Host "  Fetching commit history from '$selectedBranch'..." -NoNewline
+    Invoke-GitWithPAT -GitArgs @("-C", "$ReviewRoot\v1", "fetch", "--depth", "50", $originUrl, "refs/heads/$selectedBranch") -PAT $PAT | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host ""
+        Write-Host "ERROR: git fetch failed for branch '$selectedBranch'." -ForegroundColor Red
+        Write-Host ""
+        Write-Host "HOW TO FIX:" -ForegroundColor Yellow
+        Write-Host "  Check your network connection and PAT (use option 5 to update PAT)." -ForegroundColor Yellow
+        Write-Host ""
+        return
+    }
+    $out = git -C "$ReviewRoot\v1" checkout FETCH_HEAD --quiet 2>&1; Write-Log "git checkout v1 FETCH_HEAD ($selectedBranch): $($out -join ' ')"
+    Write-Host " done."
+
+    # Select commit range
+    $selectScript = Join-Path $PSScriptRoot "SelectCommits.ps1"
+    if (-not (Test-Path $selectScript)) {
+        Write-Log "ERROR: SelectCommits.ps1 not found at $selectScript"
+        Write-Host ""
+        Write-Host "ERROR: SelectCommits.ps1 was not found next to Review.ps1." -ForegroundColor Red
+        Write-Host "       Expected at: $selectScript" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "HOW TO FIX:" -ForegroundColor Yellow
+        Write-Host "  Copy SelectCommits.ps1 from the MendixDiff tool folder to:" -ForegroundColor Yellow
+        Write-Host "    $PSScriptRoot" -ForegroundColor Yellow
+        Write-Host ""
+        return
+    }
+
+    $commitsFile = Join-Path $ReviewRoot "commits.selected.ps1"
+    & $selectScript -RepoPath "$ReviewRoot\v1" -OutputFile $commitsFile -Count 50
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[INFO] Commit selection was cancelled. Returning to menu." -ForegroundColor Yellow
+        return
+    }
+    if (-not (Test-Path $commitsFile)) {
+        Write-Log "ERROR: SelectCommits.ps1 did not produce $commitsFile"
+        Write-Host ""
+        Write-Host "ERROR: SelectCommits.ps1 did not produce an output file." -ForegroundColor Red
+        Write-Host "       Expected: $commitsFile" -ForegroundColor Red
+        Write-Host ""
+        return
+    }
+
+    $CommitA = $null
+    $CommitB = $null
+    . $commitsFile
+
+    if (-not $CommitA -or -not $CommitB) {
+        Write-Log "ERROR: Could not read CommitA or CommitB from $commitsFile"
+        Write-Host ""
+        Write-Host "ERROR: Could not read CommitA or CommitB from the selection output." -ForegroundColor Red
+        Write-Host ""
+        return
+    }
+
+    Write-Log "[INFO] Branch: $selectedBranch  CommitA (base): $CommitA  CommitB (tip): $CommitB"
+    $shortA = (git -C "$ReviewRoot\v1" log -1 --pretty=format:"%h" $CommitA 2>$null).Trim()
+    $shortB = (git -C "$ReviewRoot\v1" log -1 --pretty=format:"%h" $CommitB 2>$null).Trim()
+    if (-not $shortA) { $shortA = $CommitA.Substring(0,7) }
+    if (-not $shortB) { $shortB = $CommitB.Substring(0,7) }
+
+    # Update v1\ to CommitA
+    Write-Host "  Fetching $shortA (base)..." -NoNewline
+    Invoke-GitWithPAT -GitArgs @("-C", "$ReviewRoot\v1", "fetch", "--depth", "1", $originUrl, $CommitA) -PAT $PAT | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Log "ERROR: git fetch CommitA failed"
+        Write-Host ""
+        Write-Host "ERROR: git fetch failed for CommitA in v1\." -ForegroundColor Red
+        Write-Host "       Commit: $CommitA" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "HOW TO FIX:" -ForegroundColor Yellow
+        Write-Host "  Verify the commit hash is valid and accessible on the remote." -ForegroundColor Yellow
+        Write-Host "  Check your network connection and PAT (use option 5 to update PAT)." -ForegroundColor Yellow
+        Write-Host ""
+        return
+    }
+    $out = git -C "$ReviewRoot\v1" checkout FETCH_HEAD --quiet 2>&1; Write-Log "git checkout v1 CommitA: $($out -join ' ')"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Log "ERROR: git checkout FETCH_HEAD failed in v1\"
+        Write-Host ""
+        Write-Host "ERROR: git checkout FETCH_HEAD failed in v1\." -ForegroundColor Red
+        Write-Host ""
+        return
+    }
+    Write-Log "[OK] v1\ is at CommitA ($shortA)"
+    Write-Host " done."
+
+    # Update v2\ to CommitB
+    Write-Host "  Fetching $shortB (tip)..." -NoNewline
+    Invoke-GitWithPAT -GitArgs @("-C", "$ReviewRoot\v2", "fetch", "--depth", "1", $originUrl, $CommitB) -PAT $PAT | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Log "ERROR: git fetch CommitB failed (v1\ is already at CommitA)"
+        Write-Host ""
+        Write-Host "ERROR: git fetch failed for CommitB in v2\." -ForegroundColor Red
+        Write-Host "       Commit: $CommitB" -ForegroundColor Red
+        Write-Host "       Note: v1\ has already been updated to CommitA." -ForegroundColor Red
+        Write-Host "       The workspace is in a partially updated state." -ForegroundColor Red
+        Write-Host ""
+        Write-Host "HOW TO FIX:" -ForegroundColor Yellow
+        Write-Host "  Verify the commit hash is valid and accessible on the remote." -ForegroundColor Yellow
+        Write-Host "  Check your network connection and PAT (use option 5 to update PAT)." -ForegroundColor Yellow
+        Write-Host "  Then run option 2 (Switch branch) again." -ForegroundColor Yellow
+        Write-Host ""
+        return
+    }
+    $out = git -C "$ReviewRoot\v2" checkout FETCH_HEAD --quiet 2>&1; Write-Log "git checkout v2 CommitB: $($out -join ' ')"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Log "ERROR: git checkout FETCH_HEAD failed in v2\"
+        Write-Host ""
+        Write-Host "ERROR: git checkout FETCH_HEAD failed in v2\." -ForegroundColor Red
+        Write-Host ""
+        return
+    }
+
+    $out = git -C "$ReviewRoot\v2" checkout -B $selectedBranch 2>&1; Write-Log "git checkout -B $selectedBranch in v2\: $($out -join ' ')"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Log "ERROR: Could not create branch $selectedBranch in v2\"
+        Write-Host ""
+        Write-Host "ERROR: Could not create branch '$selectedBranch' in v2\." -ForegroundColor Red
+        Write-Host "       Studio Pro will not be able to commit after Finish Review." -ForegroundColor Red
+        Write-Host ""
+        Write-Host "HOW TO FIX:" -ForegroundColor Yellow
+        Write-Host "  Run manually: git -C `"$ReviewRoot\v2`" checkout -B $selectedBranch" -ForegroundColor Yellow
+        Write-Host ""
+        return
+    }
+    Write-Log "[OK] v2\ is at CommitB ($shortB), branch $selectedBranch"
+    Write-Host " done."
+
+    # Prepare diff\ folder
+    Write-Host "  Setting up diff workspace..." -NoNewline
+    robocopy "$ReviewRoot\v2" "$ReviewRoot\diff" /E /IS /IT /PURGE /XD "deployment" ".git" ".mendix-cache" /NP /NDL /NFL | Out-Null
+    if ($LASTEXITCODE -ge 8) {
+        Write-Log "ERROR: robocopy failed (exit $LASTEXITCODE)"
+        Write-Host ""
+        Write-Host "ERROR: robocopy failed while syncing files into diff\." -ForegroundColor Red
+        Write-Host "       robocopy exit code: $LASTEXITCODE" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "HOW TO FIX:" -ForegroundColor Yellow
+        Write-Host "  Check available disk space and write permissions on: $ReviewRoot\diff" -ForegroundColor Yellow
+        Write-Host ""
+        return
+    }
+    Write-Log "[OK] Files synced from v2\ to diff\"
+
+    if (-not (Remove-DiffGit)) { return }
+    if (-not (Copy-GitInto -SourceGit "$ReviewRoot\v1\.git" -DestGit "$ReviewRoot\diff\.git")) { return }
+    Write-Log "[OK] diff\.git is ready"
+    Write-Host " done."
+    Write-Host ""
+
+    Open-StudioPro | Out-Null
+}
+
 function Invoke-ChangePAT {
     Write-Log "User requested PAT change"
     Remove-StoredPAT
@@ -625,23 +881,29 @@ function Show-Help {
     Write-Host "     sets up the diff workspace, and opens Studio Pro in diff mode."
     Write-Host "     Use this to begin reviewing a new set of changes."
     Write-Host ""
-    Write-Host "  2. Continue review"
+    Write-Host "  2. Switch branch"
+    Write-Host "     Lists all remote branches and lets you pick one to review."
+    Write-Host "     Fetches commits from the selected branch, runs the commit selector,"
+    Write-Host "     then sets up the diff workspace and opens Studio Pro."
+    Write-Host "     Use this when the changes you want to review are on a specific branch."
+    Write-Host ""
+    Write-Host "  3. Continue review"
     Write-Host "     Reopens the current review in Studio Pro without changing the selected"
     Write-Host "     commits. Use this if you closed Studio Pro mid-review."
     Write-Host ""
-    Write-Host "  3. Finish review"
+    Write-Host "  4. Finish review"
     Write-Host "     Switches the diff workspace to show the final (v2) state of the project"
     Write-Host "     and reopens Studio Pro. Use this when you have finished reviewing all"
     Write-Host "     changes and want to confirm the end state of the project."
     Write-Host ""
-    Write-Host "  4. Change PAT"
+    Write-Host "  5. Change PAT"
     Write-Host "     Updates your stored Personal Access Token. Use this if your PAT has"
     Write-Host "     expired or been revoked, or if you see authentication errors."
     Write-Host ""
-    Write-Host "  5. Open log file"
+    Write-Host "  6. Open log file"
     Write-Host "     Opens review.log in your default text editor."
     Write-Host ""
-    Write-Host "  6. Help"
+    Write-Host "  7. Help"
     Write-Host "     Shows this help text."
     Write-Host ""
     Write-Host "FOLDER STRUCTURE"
@@ -681,27 +943,29 @@ while ($true) {
     Show-WorkspaceState
     Write-Host "What would you like to do?"
     Write-Host "  1. Start review"
-    Write-Host "  2. Continue review"
-    Write-Host "  3. Finish review"
-    Write-Host "  4. Change PAT"
-    Write-Host "  5. Open log file"
-    Write-Host "  6. Help"
+    Write-Host "  2. Switch branch"
+    Write-Host "  3. Continue review"
+    Write-Host "  4. Finish review"
+    Write-Host "  5. Change PAT"
+    Write-Host "  6. Open log file"
+    Write-Host "  7. Help"
     Write-Host "  Q. Quit"
     Write-Host ""
 
-    $choice = (Read-Host "Enter choice (1-6), or Q to quit").Trim()
+    $choice = (Read-Host "Enter choice (1-7), or Q to quit").Trim()
 
     Write-Host ""
 
     switch ($choice) {
         "1" { Invoke-StartReview }
-        "2" { Invoke-ContinueReview }
-        "3" { Invoke-FinishReview }
-        "4" { Invoke-ChangePAT }
-        "5" { Invoke-OpenLog }
-        "6" { Show-Help }
+        "2" { Invoke-SwitchBranch }
+        "3" { Invoke-ContinueReview }
+        "4" { Invoke-FinishReview }
+        "5" { Invoke-ChangePAT }
+        "6" { Invoke-OpenLog }
+        "7" { Show-Help }
         { $_ -eq "Q" -or $_ -eq "q" } { Write-Host "Goodbye."; Exit-Script 0 }
-        default { Write-Host "  Please enter a number between 1 and 6, or Q to quit." -ForegroundColor Yellow }
+        default { Write-Host "  Please enter a number between 1 and 7, or Q to quit." -ForegroundColor Yellow }
     }
 
     Write-Host ""

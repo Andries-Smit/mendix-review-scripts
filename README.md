@@ -66,20 +66,23 @@ Run `Review.ps1` from the review root. It shows a menu:
 ```
 What would you like to do?
   1. Start review
-  2. Continue review
-  3. Finish review
-  4. Change PAT
-  5. Help
+  2. Switch branch
+  3. Continue review
+  4. Finish review
+  5. Change PAT
+  6. Open log file
+  7. Help
 ```
 
 | Option | When to use |
 |--------|-------------|
 | **1. Start review** | Begin reviewing a new set of commits. You will pick a commit range from the git log, the tool fetches both ends, sets up the diff workspace, and opens Studio Pro. |
-| **2. Continue review** | You closed Studio Pro mid-review. Reopens the same workspace without changing the selected commits. |
-| **3. Finish review** | You are done reviewing. Swaps the workspace to the v2 baseline so you can see only your own fixes, then reopens Studio Pro to commit them. |
-| **4. Change PAT** | Your PAT has expired or authentication is failing. Replaces the stored token. |
-| **5. Open log file** | Opens the detailed log. |
-| **5. Help** | In-tool explanation of the folder structure and each option. |
+| **2. Switch branch** | Lists all remote branches and lets you pick one. Fetches recent commits from that branch, runs the commit selector, then sets up the diff workspace and opens Studio Pro. |
+| **3. Continue review** | You closed Studio Pro mid-review. Reopens the same workspace without changing the selected commits. |
+| **4. Finish review** | You are done reviewing. Swaps the workspace to the v2 baseline so you can see only your own fixes, then reopens Studio Pro to commit them. |
+| **5. Change PAT** | Your PAT has expired or authentication is failing. Replaces the stored token. |
+| **6. Open log file** | Opens the detailed log. |
+| **7. Help** | In-tool explanation of the folder structure and each option. |
 
 Enter `Q` at the menu to quit.
 
@@ -88,8 +91,8 @@ Enter `Q` at the menu to quit.
 On **Start review** select the commits you would like to review
 
 ```
-  [Phase 2] Navigate DOWN to extend range end. ENTER / SPACE to confirm. ESC to reset.    
-  Range: 2-5  |  CommitB (tip): 925f862  |  CommitA (base): c95db44
+  Branch: main
+
    #      Hash      Date        Author              Subject
    ---    --------  ----------  ------------------  --------------------------------------
      1     d70ee7f  2026-04-02  Jhon Doe            Extra feature
@@ -98,6 +101,8 @@ On **Start review** select the commits you would like to review
 >    4  +] 9723bea  2026-04-02  Alice               Add page
      5     b9e67b3  2026-04-02  Jhon Doe            My awesome feature
      6     c95db44  2026-04-02  Jhon Doe            Initial app upload.
+  [Phase 2] Navigate DOWN to extend range end. ENTER / SPACE to confirm. ESC to reset.
+  Range: 2-4  |  CommitB (tip): 925f862  |  CommitA (base): b9e67b3
 ```
 ---
 
